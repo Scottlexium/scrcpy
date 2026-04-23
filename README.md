@@ -1,225 +1,148 @@
-**This GitHub repo (<https://github.com/Genymobile/scrcpy>) is the only official
-source for the project. Do not download releases from random websites, even if
-their name contains `scrcpy`.**
+# scrcpy GUI
 
-# scrcpy (v3.3.4)
+A desktop app for mirroring and controlling Android devices — built on top of [scrcpy](https://github.com/Genymobile/scrcpy) by Genymobile.
 
-<img src="app/data/icon.svg" width="128" height="128" alt="scrcpy" align="right" />
+No terminal required. Connect, mirror, control, and manage your Android device through a clean interface.
 
-_pronounced "**scr**een **c**o**py**"_
+---
 
-This application mirrors Android devices (video and audio) connected via USB or
-[TCP/IP](doc/connection.md#tcpip-wireless) and allows control using the
-computer's keyboard and mouse. It does not require _root_ access or an app
-installed on the device. It works on _Linux_, _Windows_, and _macOS_.
+## Download
 
-![screenshot](assets/screenshot-debian-600.jpg)
+| Platform | Download |
+|---|---|
+| macOS (Apple Silicon) | [scrcpy-gui-mac-arm64.dmg](https://github.com/Scottlexium/scrcpy/releases/latest) |
+| macOS (Intel) | [scrcpy-gui-mac-x64.dmg](https://github.com/Scottlexium/scrcpy/releases/latest) |
+| Windows | [scrcpy-gui-win-x64.exe](https://github.com/Scottlexium/scrcpy/releases/latest) |
+| Linux (AppImage) | [scrcpy-gui-linux-x64.AppImage](https://github.com/Scottlexium/scrcpy/releases/latest) |
+| Linux (deb) | [scrcpy-gui-linux-x64.deb](https://github.com/Scottlexium/scrcpy/releases/latest) |
 
-It focuses on:
+→ **[All releases](https://github.com/Scottlexium/scrcpy/releases)**
 
- - **lightness**: native, displays only the device screen
- - **performance**: 30~120fps, depending on the device
- - **quality**: 1920×1080 or above
- - **low latency**: [35~70ms][lowlatency]
- - **low startup time**: ~1 second to display the first image
- - **non-intrusiveness**: nothing is left installed on the Android device
- - **user benefits**: no account, no ads, no internet required
- - **freedom**: free and open source software
+---
 
-[lowlatency]: https://github.com/Genymobile/scrcpy/pull/646
+## Features
 
-Its features include:
- - [audio forwarding](doc/audio.md) (Android 11+)
- - [recording](doc/recording.md)
- - [virtual display](doc/virtual_display.md)
- - mirroring with [Android device screen off](doc/device.md#turn-screen-off)
- - [copy-paste](doc/control.md#copy-paste) in both directions
- - [configurable quality](doc/video.md)
- - [camera mirroring](doc/camera.md) (Android 12+)
- - [mirroring as a webcam (V4L2)](doc/v4l2.md) (Linux-only)
- - physical [keyboard][hid-keyboard] and [mouse][hid-mouse] simulation (HID)
- - [gamepad](doc/gamepad.md) support
- - [OTG mode](doc/otg.md)
- - and more…
+- **Auto-install ADB and scrcpy** — detects missing dependencies and downloads them to standard system locations on first launch, no terminal required
+- **One-click WiFi switch** — connect over USB once, switch to wireless automatically
+- **Device info widget** — battery, model, Android version, resolution, and IP address shown while connected
+- **Presets** — built-in Low Latency, High Quality, Screencast, and Gaming profiles; save custom ones
+- **Quick actions** — Home, Back, Recents, Volume, Screenshot, Rotate, Lock while mirroring
+- **APK sideloader** — drag and drop `.apk` files onto the window to install instantly
+- **App launcher** — browse installed apps, launch or force-stop with one click
+- **ADB terminal** — run shell commands directly inside the app with command history
+- **Logcat viewer** — stream device logs with tag/level filtering and colour-coded output
+- **Auto-reconnect** — watches for device reconnect and re-launches automatically
+- **Multi-device** — run simultaneous sessions across multiple connected devices
+- **Session history** — log of past sessions with device, duration, and settings
+- **System tray** — minimize to tray, quick-launch from menu bar
+- **Broken screen recovery** — OTG input mode (no authorization required), wireless pairing wizard, and ADB key export
 
-[hid-keyboard]: doc/keyboard.md#physical-keyboard-simulation
-[hid-mouse]: doc/mouse.md#physical-mouse-simulation
+---
 
-## Prerequisites
+## Requirements
 
-The Android device requires at least API 21 (Android 5.0).
+- macOS 12+, Windows 10+, or Linux (x86-64)
+- Android device with **USB debugging** enabled
+- USB cable for initial connection (wireless after first connect)
 
-[Audio forwarding](doc/audio.md) is supported for API >= 30 (Android 11+).
+USB debugging is found at: **Settings → Developer Options → USB Debugging**. If Developer Options is hidden, go to **Settings → About Phone** and tap **Build Number** seven times.
 
-Make sure you [enabled USB debugging][enable-adb] on your device(s).
+---
 
-[enable-adb]: https://developer.android.com/studio/debug/dev-options#enable
+## Installation notes
 
-On some devices (especially Xiaomi), you might get the following error:
+### macOS — Gatekeeper warning
+
+On first launch macOS may block the app because it is not signed with a paid Apple certificate.
+
+**Fix:** In Finder (not Launchpad), right-click the app → **Open** → click **Open**. You only need to do this once.
+
+If the option does not appear, go to **System Settings → Privacy & Security** and click **Open Anyway**.
+
+### Windows — SmartScreen warning
+
+Windows may show a blue "Windows protected your PC" dialog.
+
+**Fix:** Click **More info** → **Run anyway**.
+
+### Linux — AppImage permissions
+
+```bash
+chmod +x scrcpy-gui-linux-x64.AppImage
+./scrcpy-gui-linux-x64.AppImage
+```
+
+---
+
+## Running from source
+
+Requires [Node.js](https://nodejs.org) v18 or later.
+
+```bash
+git clone https://github.com/Scottlexium/scrcpy.git
+cd scrcpy/gui
+npm install
+npm start
+```
+
+## Building a distributable
+
+```bash
+cd gui
+
+# All platforms
+npm run build
+
+# Platform-specific
+npm run build:mac
+npm run build:win
+npm run build:linux
+```
+
+Output is written to `gui/dist/`. The build script generates all icon formats from `gui/assets/icon.svg` before invoking electron-builder.
+
+---
+
+## Project structure
 
 ```
-Injecting input events requires the caller (or the source of the instrumentation, if any) to have the INJECT_EVENTS permission.
+scrcpy/
+├── gui/                  Electron GUI
+│   ├── main.js           Main process (IPC, ADB, subprocess management)
+│   ├── preload.js        Context bridge
+│   ├── index.html        Renderer (all UI)
+│   ├── assets/
+│   │   ├── icon.svg      Source icon
+│   │   └── icons/        Generated platform icons (icns, ico, png)
+│   ├── scripts/
+│   │   └── gen-icons.js  Icon generation script
+│   └── package.json
+├── app/                  scrcpy C source (upstream)
+└── server/               Android server (upstream)
 ```
 
-In that case, you need to enable [an additional option][control] `USB debugging
-(Security Settings)` (this is an item different from `USB debugging`) to control
-it using a keyboard and mouse. Rebooting the device is necessary once this
-option is set.
+---
 
-[control]: https://github.com/Genymobile/scrcpy/issues/70#issuecomment-373286323
+## How ADB and scrcpy are installed
 
-Note that USB debugging is not required to run scrcpy in [OTG mode](doc/otg.md).
+When the app detects that ADB or scrcpy are missing it offers to install them automatically.
 
+**ADB (Android Platform Tools)** is downloaded from Google and installed to:
+- macOS: `~/Library/Android/sdk/platform-tools/`
+- Linux: `~/Android/Sdk/platform-tools/`
+- Windows: `%LOCALAPPDATA%\Android\sdk\platform-tools\`
 
-## Get the app
+**scrcpy** is downloaded from the [latest GitHub release](https://github.com/Genymobile/scrcpy/releases/latest) and installed to:
+- macOS: `~/Library/Application Support/scrcpy/`
+- Linux: `~/.local/share/scrcpy/`
+- Windows: `%LOCALAPPDATA%\scrcpy\`
 
- - [Linux](doc/linux.md)
- - [Windows](doc/windows.md) (read [how to run](doc/windows.md#run))
- - [macOS](doc/macos.md)
+Both directories are added to your shell PATH automatically.
 
-
-## Must-know tips
-
- - [Reducing resolution](doc/video.md#size) may greatly improve performance
-   (`scrcpy -m1024`)
- - [_Right-click_](doc/mouse.md#mouse-bindings) triggers `BACK`
- - [_Middle-click_](doc/mouse.md#mouse-bindings) triggers `HOME`
- - <kbd>Alt</kbd>+<kbd>f</kbd> toggles [fullscreen](doc/window.md#fullscreen)
- - There are many other [shortcuts](doc/shortcuts.md)
-
-
-## Usage examples
-
-There are a lot of options, [documented](#user-documentation) in separate pages.
-Here are just some common examples.
-
- - Capture the screen in H.265 (better quality), limit the size to 1920, limit
-   the frame rate to 60fps, disable audio, and control the device by simulating
-   a physical keyboard:
-
-    ```bash
-    scrcpy --video-codec=h265 --max-size=1920 --max-fps=60 --no-audio --keyboard=uhid
-    scrcpy --video-codec=h265 -m1920 --max-fps=60 --no-audio -K  # short version
-    ```
-
- - Start VLC in a new virtual display (separate from the device display):
-
-    ```bash
-    scrcpy --new-display=1920x1080 --start-app=org.videolan.vlc
-    ```
-
- - Record the device camera in H.265 at 1920x1080 (and microphone) to an MP4
-   file:
-
-    ```bash
-    scrcpy --video-source=camera --video-codec=h265 --camera-size=1920x1080 --record=file.mp4
-    ```
-
- - Capture the device front camera and expose it as a webcam on the computer (on
-   Linux):
-
-    ```bash
-    scrcpy --video-source=camera --camera-size=1920x1080 --camera-facing=front --v4l2-sink=/dev/video2 --no-playback
-    ```
-
- - Control the device without mirroring by simulating a physical keyboard and
-   mouse (USB debugging not required):
-
-    ```bash
-    scrcpy --otg
-    ```
-
- - Control the device using gamepad controllers plugged into the computer:
-
-    ```bash
-    scrcpy --gamepad=uhid
-    scrcpy -G  # short version
-    ```
-
-## User documentation
-
-The application provides a lot of features and configuration options. They are
-documented in the following pages:
-
- - [Connection](doc/connection.md)
- - [Video](doc/video.md)
- - [Audio](doc/audio.md)
- - [Control](doc/control.md)
- - [Keyboard](doc/keyboard.md)
- - [Mouse](doc/mouse.md)
- - [Gamepad](doc/gamepad.md)
- - [Device](doc/device.md)
- - [Window](doc/window.md)
- - [Recording](doc/recording.md)
- - [Virtual display](doc/virtual_display.md)
- - [Tunnels](doc/tunnels.md)
- - [OTG](doc/otg.md)
- - [Camera](doc/camera.md)
- - [Video4Linux](doc/v4l2.md)
- - [Shortcuts](doc/shortcuts.md)
-
-
-## Resources
-
- - [FAQ](FAQ.md)
- - [Translations][wiki] (not necessarily up to date)
- - [Build instructions](doc/build.md)
- - [Developers](doc/develop.md)
-
-[wiki]: https://github.com/Genymobile/scrcpy/wiki
-
-
-## Articles
-
-- [Introducing scrcpy][article-intro]
-- [Scrcpy now works wirelessly][article-tcpip]
-- [Scrcpy 2.0, with audio][article-scrcpy2]
-
-[article-intro]: https://blog.rom1v.com/2018/03/introducing-scrcpy/
-[article-tcpip]: https://www.genymotion.com/blog/open-source-project-scrcpy-now-works-wirelessly/
-[article-scrcpy2]: https://blog.rom1v.com/2023/03/scrcpy-2-0-with-audio/
-
-## Contact
-
-You can open an [issue] for bug reports, feature requests or general questions.
-
-For bug reports, please read the [FAQ](FAQ.md) first, you might find a solution
-to your problem immediately.
-
-[issue]: https://github.com/Genymobile/scrcpy/issues
-
-You can also use:
-
- - Reddit: [`r/scrcpy`](https://www.reddit.com/r/scrcpy)
- - BlueSky: [`@scrcpy.bsky.social`](https://bsky.app/profile/scrcpy.bsky.social)
- - Twitter: [`@scrcpy_app`](https://twitter.com/scrcpy_app)
-
-
-## Donate
-
-I'm [@rom1v](https://github.com/rom1v), the author and maintainer of _scrcpy_.
-
-If you appreciate this application, you can [support my open source
-work][donate]:
- - [GitHub Sponsors](https://github.com/sponsors/rom1v)
- - [Liberapay](https://liberapay.com/rom1v/)
- - [PayPal](https://paypal.me/rom2v)
-
-[donate]: https://blog.rom1v.com/about/#support-my-open-source-work
+---
 
 ## License
 
-    Copyright (C) 2018 Genymobile
-    Copyright (C) 2018-2026 Romain Vimont
+The GUI code in `gui/` is released under the **Apache License 2.0**, the same license as the upstream scrcpy project.
 
-    Licensed under the Apache License, Version 2.0 (the "License");
-    you may not use this file except in compliance with the License.
-    You may obtain a copy of the License at
-
-        http://www.apache.org/licenses/LICENSE-2.0
-
-    Unless required by applicable law or agreed to in writing, software
-    distributed under the License is distributed on an "AS IS" BASIS,
-    WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-    See the License for the specific language governing permissions and
-    limitations under the License.
+scrcpy is developed and maintained by [Genymobile](https://github.com/Genymobile/scrcpy). This repository is an independent fork that adds a graphical interface.
