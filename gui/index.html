@@ -1,0 +1,3417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>scrcpy GUI</title>
+<style>
+/* ── Design tokens ───────────────────────────────────────────────────────── */
+:root {
+  --bg:            #0b0b14;
+  --surface:       #10101e;
+  --card:          #16162a;
+  --card-raised:   #1c1c32;
+  --border:        #1f1f38;
+  --border-focus:  #5b54e8;
+  --accent:        #6c5ce7;
+  --accent-hi:     #8b82f0;
+  --accent-glow:   rgba(108, 92, 231, 0.18);
+  --green:         #00cba9;
+  --green-glow:    rgba(0, 203, 169, 0.2);
+  --red:           #f0476a;
+  --text:          #ededf5;
+  --sub:           #8888b8;
+  --muted:         #44446a;
+  --radius-sm:     6px;
+  --radius:        10px;
+  --radius-lg:     14px;
+  --font:          -apple-system, BlinkMacSystemFont, 'Inter', 'Segoe UI', sans-serif;
+  --mono:          'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
+  --ease:          cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* ── Reset ───────────────────────────────────────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body { height: 100%; overflow: hidden; }
+
+body {
+  font-family: var(--font);
+  background: var(--bg);
+  color: var(--text);
+  display: flex;
+  flex-direction: column;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* ── Titlebar ─────────────────────────────────────────────────────────────── */
+.titlebar {
+  height: 48px;
+  -webkit-app-region: drag;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+  position: relative;
+  padding: 0 80px;
+}
+.titlebar-name {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sub);
+}
+.titlebar-pill {
+  position: absolute;
+  right: 16px;
+  -webkit-app-region: no-drag;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 20px;
+  padding: 4px 10px 4px 8px;
+  font-size: 11px;
+  color: var(--sub);
+}
+.titlebar-pill .status-led {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: background 0.3s, box-shadow 0.3s;
+  flex-shrink: 0;
+}
+.titlebar-pill .status-led.running {
+  background: var(--green);
+  box-shadow: 0 0 8px var(--green-glow);
+}
+
+/* ── Shell ────────────────────────────────────────────────────────────────── */
+.shell { display: flex; flex: 1; overflow: hidden; }
+
+/* ── Sidebar ──────────────────────────────────────────────────────────────── */
+.sidebar {
+  width: 210px;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  padding: 10px 0;
+}
+
+.nav-section-label {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 16px 16px 6px;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  margin: 1px 8px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--sub);
+  transition: background 0.12s, color 0.12s;
+  position: relative;
+}
+.nav-item:hover { background: rgba(255,255,255,0.04); color: var(--text); }
+.nav-item.active {
+  background: var(--accent-glow);
+  color: var(--accent-hi);
+}
+.nav-item.active .nav-icon { color: var(--accent-hi); }
+.nav-icon { width: 16px; height: 16px; flex-shrink: 0; display: flex; align-items: center; justify-content: center; }
+.nav-icon svg { width: 16px; height: 16px; }
+
+/* ── Content ──────────────────────────────────────────────────────────────── */
+.content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 20px;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.content::-webkit-scrollbar { width: 4px; }
+.content::-webkit-scrollbar-thumb { background: var(--border); border-radius: 4px; }
+
+.panel { display: none; }
+.panel.active { display: block; }
+
+/* ── Device bar ───────────────────────────────────────────────────────────── */
+.device-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 18px;
+}
+.device-bar-label { font-size: 11px; color: var(--sub); font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+
+/* ── Cards ────────────────────────────────────────────────────────────────── */
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 14px;
+  overflow: visible;
+}
+.card-header {
+  padding: 13px 16px 12px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--sub);
+  border-bottom: 1px solid var(--border);
+}
+.card-body { padding: 16px; }
+
+/* ── Field rows ───────────────────────────────────────────────────────────── */
+.field {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.field:last-child { border-bottom: none; padding-bottom: 0; }
+.field:first-child { padding-top: 0; }
+.field-meta { display: flex; flex-direction: column; gap: 2px; flex-shrink: 0; }
+.field-label { font-size: 13px; font-weight: 500; color: var(--text); }
+.field-hint { font-size: 11px; color: var(--sub); }
+.field-control { display: flex; align-items: center; flex-shrink: 0; }
+
+/* ── Custom Toggle ────────────────────────────────────────────────────────── */
+.c-toggle { position: relative; display: inline-block; width: 42px; height: 23px; cursor: pointer; }
+.c-toggle input { opacity: 0; width: 0; height: 0; position: absolute; }
+.c-toggle-track {
+  position: absolute; inset: 0;
+  background: var(--border);
+  border-radius: 23px;
+  transition: background 0.2s var(--ease), box-shadow 0.2s;
+}
+.c-toggle-thumb {
+  position: absolute;
+  top: 3px; left: 3px;
+  width: 17px; height: 17px;
+  background: var(--sub);
+  border-radius: 50%;
+  transition: transform 0.2s var(--ease), background 0.2s;
+}
+.c-toggle input:checked ~ .c-toggle-track {
+  background: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 0 12px var(--accent-glow);
+}
+.c-toggle input:checked ~ .c-toggle-thumb {
+  transform: translateX(19px);
+  background: #fff;
+}
+
+/* ── Custom Select ────────────────────────────────────────────────────────── */
+.c-select { position: relative; min-width: 160px; }
+.c-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--card-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  color: var(--text);
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  white-space: nowrap;
+}
+.c-select-trigger:hover { border-color: var(--sub); background: var(--card); }
+.c-select.open .c-select-trigger {
+  border-color: var(--border-focus);
+  background: var(--card);
+}
+.c-select-chevron {
+  width: 14px; height: 14px;
+  color: var(--sub);
+  transition: transform 0.2s var(--ease);
+  flex-shrink: 0;
+}
+.c-select.open .c-select-chevron { transform: rotate(180deg); }
+
+.c-select-panel {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0; right: 0;
+  background: var(--card-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: 0 16px 48px rgba(0,0,0,0.5), 0 4px 16px rgba(0,0,0,0.3);
+  z-index: 100;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(-6px) scale(0.98);
+  transform-origin: top center;
+  pointer-events: none;
+  transition: opacity 0.18s var(--ease), transform 0.18s var(--ease);
+}
+.c-select.open .c-select-panel {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: all;
+}
+.c-select-option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 9px 12px;
+  font-size: 13px;
+  color: var(--sub);
+  cursor: pointer;
+  transition: background 0.1s, color 0.1s;
+  gap: 10px;
+}
+.c-select-option:hover { background: rgba(255,255,255,0.05); color: var(--text); }
+.c-select-option.selected { color: var(--accent-hi); background: var(--accent-glow); }
+.c-select-check { width: 14px; height: 14px; flex-shrink: 0; opacity: 0; color: var(--accent-hi); }
+.c-select-option.selected .c-select-check { opacity: 1; }
+
+/* ── Slider ───────────────────────────────────────────────────────────────── */
+.c-slider-wrap { display: flex; align-items: center; gap: 12px; flex: 1; }
+.c-slider {
+  flex: 1;
+  -webkit-appearance: none;
+  height: 3px;
+  border-radius: 3px;
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--fill, 0%), var(--border) var(--fill, 0%));
+  outline: none;
+  cursor: pointer;
+}
+.c-slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 15px; height: 15px;
+  background: #fff;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--accent), 0 2px 6px rgba(0,0,0,0.4);
+  cursor: pointer;
+  transition: box-shadow 0.15s;
+}
+.c-slider:hover::-webkit-slider-thumb { box-shadow: 0 0 0 3px var(--accent), 0 0 12px var(--accent-glow), 0 2px 6px rgba(0,0,0,0.4); }
+.c-slider-val {
+  font-size: 12px;
+  color: var(--accent-hi);
+  min-width: 52px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+  font-family: var(--mono);
+}
+
+/* ── Text input ───────────────────────────────────────────────────────────── */
+.c-input {
+  background: var(--card-raised);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  font-size: 13px;
+  font-family: var(--font);
+  outline: none;
+  transition: border-color 0.15s;
+  user-select: text;
+}
+.c-input:focus { border-color: var(--border-focus); }
+.c-input::placeholder { color: var(--muted); }
+
+/* ── Icon button ──────────────────────────────────────────────────────────── */
+.c-icon-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px; height: 32px;
+  background: var(--card-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--sub);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  flex-shrink: 0;
+}
+.c-icon-btn:hover { background: var(--card); border-color: var(--sub); color: var(--text); }
+.c-icon-btn svg { width: 15px; height: 15px; }
+
+/* ── Inline button ────────────────────────────────────────────────────────── */
+.c-btn {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  background: var(--card-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--sub);
+  padding: 7px 12px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: var(--font);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.c-btn svg { width: 14px; height: 14px; flex-shrink: 0; }
+.c-btn:hover { border-color: var(--accent-hi); color: var(--accent-hi); background: var(--accent-glow); }
+
+/* ── Toggle grid (quick settings) ────────────────────────────────────────── */
+.toggle-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.toggle-tile {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  background: var(--card-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px 14px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+}
+.toggle-tile:hover { border-color: var(--sub); }
+.toggle-tile-info { display: flex; flex-direction: column; gap: 3px; }
+.toggle-tile-label { font-size: 13px; font-weight: 500; color: var(--text); }
+.toggle-tile-hint { font-size: 11px; color: var(--sub); }
+
+/* ── Args preview ─────────────────────────────────────────────────────────── */
+.args-preview {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--green);
+  word-break: break-all;
+  line-height: 1.7;
+  min-height: 44px;
+}
+
+/* ── Path row ─────────────────────────────────────────────────────────────── */
+.path-row { display: flex; gap: 8px; flex: 1; align-items: center; }
+.path-row .c-input { flex: 1; min-width: 0; }
+
+/* ── Log ──────────────────────────────────────────────────────────────────── */
+.log-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.log-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+  color: var(--sub);
+}
+.log-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--muted);
+  transition: background 0.3s, box-shadow 0.3s;
+}
+.log-dot.running { background: var(--green); box-shadow: 0 0 8px var(--green-glow); }
+.log-box {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 13px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--sub);
+  height: 320px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.log-err { color: var(--red); }
+.log-exit { color: var(--muted); }
+
+/* ── Launch bar ───────────────────────────────────────────────────────────── */
+.launch-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.btn-launch {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 9px;
+  padding: 12px 20px;
+  background: linear-gradient(135deg, #6c5ce7 0%, #8b7cf7 100%);
+  border: none;
+  border-radius: var(--radius);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  font-family: var(--font);
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 4px 20px rgba(108, 92, 231, 0.4);
+}
+.btn-launch svg { width: 16px; height: 16px; }
+.btn-launch:hover { opacity: 0.92; transform: translateY(-1px); box-shadow: 0 6px 28px rgba(108,92,231,0.5); }
+.btn-launch:active { transform: translateY(0); }
+.btn-launch:disabled {
+  background: var(--card);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  box-shadow: none;
+  cursor: not-allowed;
+  transform: none;
+  opacity: 1;
+}
+.btn-stop {
+  display: none;
+  align-items: center;
+  gap: 7px;
+  padding: 12px 18px;
+  background: transparent;
+  border: 1px solid rgba(240,71,106,0.4);
+  border-radius: var(--radius);
+  color: var(--red);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.btn-stop svg { width: 14px; height: 14px; }
+.btn-stop:hover { background: rgba(240,71,106,0.08); border-color: var(--red); }
+.btn-stop.visible { display: flex; }
+
+/* ── Setup / dependency panel ─────────────────────────────────────────────── */
+.dep-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  margin-bottom: 12px;
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+.dep-icon {
+  width: 36px; height: 36px;
+  border-radius: 10px;
+  display: flex; align-items: center; justify-content: center;
+  flex-shrink: 0;
+  font-size: 16px;
+}
+.dep-icon.ok  { background: rgba(0,203,169,0.12); color: var(--green); }
+.dep-icon.err { background: rgba(240,71,106,0.12); color: var(--red); }
+.dep-icon svg { width: 18px; height: 18px; }
+
+.dep-body { flex: 1; min-width: 0; }
+.dep-name { font-size: 14px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.dep-path {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--green);
+  margin-bottom: 6px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.dep-path.missing { color: var(--red); }
+.dep-desc { font-size: 12px; color: var(--sub); margin-bottom: 10px; line-height: 1.5; }
+.dep-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.dep-badge {
+  display: inline-flex; align-items: center; gap: 5px;
+  font-size: 11px; font-weight: 600;
+  padding: 3px 8px; border-radius: 20px;
+  margin-bottom: 6px;
+}
+.dep-badge.ok  { background: rgba(0,203,169,0.12); color: var(--green); }
+.dep-badge.err { background: rgba(240,71,106,0.12); color: var(--red); }
+.dep-badge svg { width: 11px; height: 11px; }
+
+.setup-header {
+  display: flex; align-items: center; gap: 12px;
+  margin-bottom: 20px;
+}
+.setup-header-icon {
+  width: 42px; height: 42px;
+  background: var(--accent-glow);
+  border-radius: 12px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--accent-hi);
+}
+.setup-header-icon svg { width: 20px; height: 20px; }
+.setup-title { font-size: 17px; font-weight: 700; color: var(--text); }
+.setup-sub   { font-size: 13px; color: var(--sub); margin-top: 2px; }
+
+.path-override {
+  display: flex; gap: 8px; align-items: center; margin-top: 8px;
+}
+.path-override .c-input { flex: 1; font-family: var(--mono); font-size: 12px; }
+
+/* ── Update banner ────────────────────────────────────────────────────────── */
+.update-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(108,92,231,0.12);
+  border-top: 1px solid rgba(108,92,231,0.3);
+  padding: 8px 18px;
+  font-size: 12px;
+  color: var(--accent-hi);
+  flex-shrink: 0;
+}
+.update-dismiss {
+  margin-left: auto;
+  background: none;
+  border: none;
+  color: var(--sub);
+  font-size: 16px;
+  cursor: pointer;
+  padding: 0 4px;
+  line-height: 1;
+}
+.update-dismiss:hover { color: var(--text); }
+
+/* ── Device info widget ────────────────────────────────────────────────────── */
+.device-info-widget {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 8px 14px;
+  margin-bottom: 14px;
+  font-size: 12px;
+  color: var(--sub);
+}
+.di-cell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+}
+.di-cell svg { flex-shrink: 0; }
+.di-sep { width: 1px; height: 16px; background: var(--border); }
+.di-wifi { gap: 6px; }
+.di-wifi-btn {
+  background: var(--accent-glow);
+  border: 1px solid var(--accent);
+  color: var(--accent-hi);
+  border-radius: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.15s;
+  white-space: nowrap;
+}
+.di-wifi-btn:hover { background: var(--accent); color: #fff; }
+.di-wifi-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* ── Presets grid ──────────────────────────────────────────────────────────── */
+.presets-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+.preset-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  background: var(--card-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  position: relative;
+}
+.preset-chip:hover { border-color: var(--accent); background: var(--accent-glow); }
+.preset-chip.active { border-color: var(--accent); background: var(--accent-glow); }
+.preset-name { font-size: 12px; font-weight: 600; color: var(--text); }
+.preset-desc { font-size: 10px; color: var(--sub); }
+.preset-delete {
+  position: absolute;
+  top: 6px; right: 6px;
+  background: none;
+  border: none;
+  color: var(--muted);
+  cursor: pointer;
+  padding: 2px;
+  display: none;
+}
+.preset-chip:hover .preset-delete { display: block; }
+.preset-delete:hover { color: var(--red); }
+.preset-delete svg { width: 12px; height: 12px; }
+
+/* ── Quick actions ─────────────────────────────────────────────────────────── */
+.qa-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+.qa-btn {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  background: var(--card-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 9px 12px;
+  color: var(--sub);
+  font-size: 10px;
+  font-family: var(--font);
+  cursor: pointer;
+  transition: background 0.12s, border-color 0.12s, color 0.12s;
+  min-width: 52px;
+}
+.qa-btn svg { width: 18px; height: 18px; }
+.qa-btn:hover { background: var(--accent-glow); border-color: var(--accent); color: var(--accent-hi); }
+.qa-btn:active { transform: scale(0.95); }
+.qa-sep { width: 1px; height: 40px; background: var(--border); margin: 0 2px; }
+.qa-feedback {
+  margin-top: 8px;
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--green);
+  min-height: 16px;
+  transition: opacity 0.3s;
+}
+
+/* ── Extra sessions ────────────────────────────────────────────────────────── */
+.extra-session-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  margin-bottom: 8px;
+  font-size: 13px;
+  color: var(--text);
+}
+.extra-session-info { display: flex; flex-direction: column; gap: 2px; }
+.extra-session-serial { font-size: 11px; color: var(--sub); font-family: var(--mono); }
+
+/* ── APK sideloader ────────────────────────────────────────────────────────── */
+.apk-dropzone {
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  padding: 28px 20px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  text-align: center;
+  transition: border-color 0.15s, background 0.15s;
+  cursor: default;
+}
+.apk-dropzone.drag-over { border-color: var(--accent); background: var(--accent-glow); }
+.apk-drop-label { font-size: 14px; font-weight: 500; color: var(--text); }
+.apk-drop-sub   { font-size: 12px; color: var(--muted); }
+.apk-selected {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--card-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+}
+.apk-filename { flex: 1; font-size: 13px; font-family: var(--mono); color: var(--accent-hi); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.apk-output {
+  margin-top: 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.6;
+  color: var(--sub);
+  max-height: 140px;
+  overflow-y: auto;
+  white-space: pre-wrap;
+}
+.apk-output .ok  { color: var(--green); }
+.apk-output .err { color: var(--red); }
+
+/* ── App list ──────────────────────────────────────────────────────────────── */
+.app-search-row {
+  display: flex;
+  align-items: center;
+  background: var(--card-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px 10px;
+  margin-bottom: 8px;
+}
+.app-search-row .c-input:focus { box-shadow: none; }
+.app-list {
+  max-height: 280px;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.app-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 6px;
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-family: var(--mono);
+  color: var(--sub);
+  transition: background 0.1s;
+}
+.app-item:hover { background: var(--card-raised); color: var(--text); }
+.app-item-pkg { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.app-item-actions { display: flex; gap: 4px; flex-shrink: 0; }
+.app-empty { font-size: 12px; color: var(--muted); text-align: center; padding: 24px; }
+
+/* ── Terminal ──────────────────────────────────────────────────────────────── */
+.term-output {
+  flex: 1;
+  background: var(--bg);
+  padding: 12px;
+  font-family: var(--mono);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--sub);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-all;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  min-height: 0;
+}
+.term-cmd  { color: var(--accent-hi); }
+.term-out  { color: var(--text); }
+.term-err  { color: var(--red); }
+.term-input-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  background: var(--surface);
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.term-prompt { font-family: var(--mono); font-size: 13px; color: var(--accent); }
+.term-input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 13px;
+  outline: none;
+  caret-color: var(--accent);
+  user-select: text;
+}
+
+/* ── Logcat ────────────────────────────────────────────────────────────────── */
+.logcat-output {
+  flex: 1;
+  background: var(--bg);
+  padding: 10px 12px;
+  font-family: var(--mono);
+  font-size: 11px;
+  line-height: 1.65;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  white-space: pre-wrap;
+  word-break: break-all;
+  min-height: 0;
+}
+.lc-V { color: #666; }
+.lc-D { color: #5599ff; }
+.lc-I { color: var(--green); }
+.lc-W { color: #f0a500; }
+.lc-E { color: var(--red); }
+.lc-F { color: #ff00ff; font-weight: 700; }
+
+/* ── History ───────────────────────────────────────────────────────────────── */
+.history-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.history-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.history-device { font-size: 13px; font-weight: 600; color: var(--text); }
+.history-time   { font-size: 11px; color: var(--sub); font-family: var(--mono); }
+.history-meta   { font-size: 11px; color: var(--muted); }
+.history-empty  { text-align: center; padding: 40px; font-size: 13px; color: var(--muted); }
+
+/* ── Auth banner ──────────────────────────────────────────────────────────── */
+.auth-banner {
+  display: none;
+  align-items: flex-start;
+  gap: 12px;
+  background: rgba(240, 71, 106, 0.07);
+  border: 1px solid rgba(240, 71, 106, 0.25);
+  border-radius: var(--radius);
+  padding: 13px 14px;
+  margin-bottom: 14px;
+}
+.auth-banner-icon {
+  width: 32px; height: 32px;
+  background: rgba(240, 71, 106, 0.12);
+  border-radius: 8px;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--red);
+  flex-shrink: 0;
+}
+.auth-banner-icon svg { width: 16px; height: 16px; }
+.auth-banner-body { flex: 1; }
+.auth-banner-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; }
+.auth-banner-desc  { font-size: 12px; color: var(--sub); line-height: 1.5; }
+.auth-pulse {
+  display: inline-block;
+  width: 7px; height: 7px;
+  background: var(--red);
+  border-radius: 50%;
+  margin-right: 6px;
+  animation: pulse 1.4s ease-in-out infinite;
+  vertical-align: middle;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; transform: scale(1); }
+  50%       { opacity: 0.4; transform: scale(0.75); }
+}
+.auth-broken-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 10px;
+  background: none;
+  border: none;
+  color: var(--sub);
+  font-size: 12px;
+  font-family: var(--font);
+  cursor: pointer;
+  padding: 0;
+  transition: color 0.15s;
+}
+.auth-broken-toggle:hover { color: var(--text); }
+.auth-broken-toggle svg { transition: transform 0.2s var(--ease); }
+.auth-broken-toggle.open svg { transform: rotate(180deg); }
+
+/* ── Broken screen recovery panel ────────────────────────────────────────── */
+.broken-screen-panel {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  margin-bottom: 14px;
+  overflow: hidden;
+}
+.bsp-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 16px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--sub);
+  border-bottom: 1px solid var(--border);
+  background: rgba(0,0,0,0.12);
+}
+.bsp-header svg { color: var(--red); flex-shrink: 0; }
+
+.bsp-option {
+  display: flex;
+  gap: 14px;
+  padding: 16px;
+  border-bottom: 1px solid var(--border);
+}
+.bsp-option:last-child { border-bottom: none; }
+.bsp-option-number {
+  width: 24px; height: 24px;
+  background: var(--card-raised);
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--sub);
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+.bsp-option-body { flex: 1; min-width: 0; }
+.bsp-option-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.bsp-option-desc {
+  font-size: 12px;
+  color: var(--sub);
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+.bsp-option-desc strong { color: var(--text); }
+.bsp-option-desc em { color: var(--accent-hi); font-style: normal; }
+.bsp-option-desc code {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--green);
+}
+
+.bsp-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 2px 7px;
+  border-radius: 20px;
+  background: rgba(0,203,169,0.12);
+  color: var(--green);
+  letter-spacing: 0.02em;
+}
+.bsp-badge-dim { background: var(--card-raised); color: var(--sub); }
+
+.bsp-option-steps { margin-bottom: 12px; }
+.bsp-step {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  font-size: 12px;
+  color: var(--sub);
+  padding: 5px 0;
+  border-bottom: 1px solid var(--border);
+  line-height: 1.5;
+}
+.bsp-step:last-child { border-bottom: none; }
+.bsp-step-n {
+  width: 18px; height: 18px;
+  background: var(--accent-glow);
+  color: var(--accent-hi);
+  border-radius: 50%;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  flex-shrink: 0;
+  margin-top: 1px;
+}
+
+.bsp-action-btn {
+  padding: 9px 16px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--accent-glow);
+  border-color: var(--accent);
+  color: var(--accent-hi);
+}
+.bsp-action-btn:hover { background: var(--accent); color: #fff; }
+.bsp-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.bsp-otg-status {
+  margin-top: 10px;
+  font-size: 12px;
+  font-family: var(--mono);
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--green);
+}
+.bsp-otg-status.err { color: var(--red); }
+
+.bsp-wireless-form {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.bsp-wireless-hint {
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 8px;
+  line-height: 1.5;
+}
+.bsp-wireless-hint code {
+  font-family: var(--mono);
+  font-size: 11px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  padding: 1px 5px;
+  color: var(--green);
+}
+.bsp-result {
+  font-size: 12px;
+  font-family: var(--mono);
+  padding: 8px 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--green);
+}
+.bsp-result.err { color: var(--red); }
+
+.bsp-key-row { display: flex; gap: 8px; align-items: flex-start; margin-bottom: 8px; }
+.bsp-key-box {
+  flex: 1;
+  font-family: var(--mono);
+  font-size: 10px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 8px 10px;
+  color: var(--sub);
+  word-break: break-all;
+  line-height: 1.5;
+  max-height: 56px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ── Download progress bar ────────────────────────────────────────────────── */
+.dl-progress {
+  margin-top: 10px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+}
+.dl-progress-bar-wrap {
+  height: 4px;
+  background: var(--border);
+  border-radius: 4px;
+  overflow: hidden;
+  margin-bottom: 7px;
+}
+.dl-progress-bar {
+  height: 100%;
+  background: linear-gradient(90deg, var(--accent), var(--accent-hi));
+  border-radius: 4px;
+  width: 0%;
+  transition: width 0.3s var(--ease);
+}
+.dl-progress-bar.done  { background: var(--green); }
+.dl-progress-bar.error { background: var(--red); }
+.dl-progress-label {
+  font-size: 11px;
+  font-family: var(--mono);
+  color: var(--sub);
+}
+.dl-progress-label.error { color: var(--red); }
+</style>
+</head>
+<body>
+
+<!-- SVG icon defs (hidden, referenced by use) -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="ic-smartphone" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="5" y="2" width="14" height="20" rx="2"/><line x1="12" y1="18" x2="12.01" y2="18"/>
+  </symbol>
+  <symbol id="ic-video" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14v-4z"/><rect x="3" y="6" width="12" height="12" rx="2"/>
+  </symbol>
+  <symbol id="ic-volume" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M11 5L6 9H2v6h4l5 4V5z"/><path d="M15.54 8.46a5 5 0 010 7.07"/><path d="M19.07 4.93a10 10 0 010 14.14"/>
+  </symbol>
+  <symbol id="ic-monitor" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="3" width="20" height="14" rx="2"/><path d="M8 21h8M12 17v4"/>
+  </symbol>
+  <symbol id="ic-gamepad" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M6 12h4m-2-2v4"/><circle cx="17" cy="11" r="1" fill="currentColor" stroke="none"/><circle cx="15" cy="13" r="1" fill="currentColor" stroke="none"/><path d="M21 16.5A2.5 2.5 0 0118.5 19h-13A2.5 2.5 0 013 16.5V9a2.5 2.5 0 012.5-2.5h13A2.5 2.5 0 0121 9v7.5z"/>
+  </symbol>
+  <symbol id="ic-record" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="ic-terminal" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 17l6-6-6-6"/><path d="M12 19h8"/>
+  </symbol>
+  <symbol id="ic-refresh" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M23 4v6h-6"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+  </symbol>
+  <symbol id="ic-folder" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+  </symbol>
+  <symbol id="ic-play" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <polygon points="5 3 19 12 5 21 5 3" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="ic-stop" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3" y="3" width="18" height="18" rx="2" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="ic-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="20 6 9 17 4 12"/>
+  </symbol>
+  <symbol id="ic-chevron-down" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="6 9 12 15 18 9"/>
+  </symbol>
+  <symbol id="ic-view-off" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M17.94 17.94A10.07 10.07 0 0112 20c-7 0-11-8-11-8a18.45 18.45 0 015.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0112 4c7 0 11 8 11 8a18.5 18.5 0 01-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/>
+  </symbol>
+  <symbol id="ic-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/>
+  </symbol>
+  <symbol id="ic-zap" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+  </symbol>
+  <symbol id="ic-hand" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 11V6a2 2 0 00-4 0v0M14 10V5a2 2 0 00-4 0v0M10 10V4a2 2 0 00-4 0v8"/><path d="M18 11a2 2 0 114 0v3a8 8 0 01-8 8H8a8 8 0 01-8-8 2 2 0 114 0"/>
+  </symbol>
+  <symbol id="ic-wrench" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M14.7 6.3a1 1 0 000 1.4l1.6 1.6a1 1 0 001.4 0l3.77-3.77a6 6 0 01-7.94 7.94l-6.91 6.91a2.12 2.12 0 01-3-3l6.91-6.91a6 6 0 017.94-7.94l-3.76 3.76z"/>
+  </symbol>
+  <symbol id="ic-check-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/>
+  </symbol>
+  <symbol id="ic-alert-circle" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+  </symbol>
+  <symbol id="ic-download" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+  </symbol>
+  <symbol id="ic-wifi" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 12.55a11 11 0 0114.08 0"/><path d="M1.42 9a16 16 0 0121.16 0"/><path d="M8.53 16.11a6 6 0 016.95 0"/><circle cx="12" cy="20" r="1" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="ic-package" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16.5 9.4l-9-5.19M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/>
+  </symbol>
+  <symbol id="ic-prompt" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+  </symbol>
+  <symbol id="ic-logcat" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3" cy="6" r="1.5" fill="currentColor" stroke="none"/><circle cx="3" cy="12" r="1.5" fill="var(--accent)" stroke="none"/><circle cx="3" cy="18" r="1.5" fill="var(--red)" stroke="none"/>
+  </symbol>
+  <symbol id="ic-clock" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+  </symbol>
+  <symbol id="ic-battery" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="2" y="7" width="18" height="10" rx="2"/><path d="M20 11h2v2h-2z" fill="currentColor" stroke="none"/>
+  </symbol>
+  <symbol id="ic-cpu" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="4" y="4" width="16" height="16" rx="2"/><rect x="9" y="9" width="6" height="6"/><line x1="9" y1="1" x2="9" y2="4"/><line x1="15" y1="1" x2="15" y2="4"/><line x1="9" y1="20" x2="9" y2="23"/><line x1="15" y1="20" x2="15" y2="23"/><line x1="20" y1="9" x2="23" y2="9"/><line x1="20" y1="14" x2="23" y2="14"/><line x1="1" y1="9" x2="4" y2="9"/><line x1="1" y1="14" x2="4" y2="14"/>
+  </symbol>
+  <symbol id="ic-camera" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/>
+  </symbol>
+  <symbol id="ic-bookmark" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M19 21l-7-5-7 5V5a2 2 0 012-2h10a2 2 0 012 2z"/>
+  </symbol>
+  <symbol id="ic-plus" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+  </symbol>
+  <symbol id="ic-trash" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 01-2 2H8a2 2 0 01-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 011-1h4a1 1 0 011 1v2"/>
+  </symbol>
+  <symbol id="ic-rotate-cw" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/>
+  </symbol>
+  <symbol id="ic-search" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+  </symbol>
+  <symbol id="ic-layers" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <polygon points="12 2 2 7 12 12 22 7 12 2"/><polyline points="2 17 12 22 22 17"/><polyline points="2 12 12 17 22 12"/>
+  </symbol>
+</svg>
+
+<!-- ── Titlebar ─────────────────────────────────────────────────── -->
+<div class="titlebar">
+  <span class="titlebar-name">scrcpy</span>
+  <div class="titlebar-pill">
+    <span class="status-led" id="titleStatusLed"></span>
+    <span id="titleStatusText">Idle</span>
+  </div>
+</div>
+
+<div class="shell">
+
+  <!-- ── Sidebar ─────────────────────────────────────────────────── -->
+  <nav class="sidebar">
+    <span class="nav-section-label">Connection</span>
+    <div class="nav-item active" data-panel="device">
+      <span class="nav-icon"><svg><use href="#ic-smartphone"/></svg></span>
+      Device
+    </div>
+
+    <span class="nav-section-label">Settings</span>
+    <div class="nav-item" data-panel="video">
+      <span class="nav-icon"><svg><use href="#ic-video"/></svg></span>
+      Video
+    </div>
+    <div class="nav-item" data-panel="audio">
+      <span class="nav-icon"><svg><use href="#ic-volume"/></svg></span>
+      Audio
+    </div>
+    <div class="nav-item" data-panel="window">
+      <span class="nav-icon"><svg><use href="#ic-monitor"/></svg></span>
+      Window
+    </div>
+    <div class="nav-item" data-panel="input">
+      <span class="nav-icon"><svg><use href="#ic-gamepad"/></svg></span>
+      Input
+    </div>
+    <div class="nav-item" data-panel="record">
+      <span class="nav-icon"><svg><use href="#ic-record"/></svg></span>
+      Recording
+    </div>
+
+    <span class="nav-section-label">Tools</span>
+    <div class="nav-item" data-panel="tools">
+      <span class="nav-icon"><svg><use href="#ic-package"/></svg></span>
+      APK &amp; Apps
+    </div>
+    <div class="nav-item" data-panel="terminal">
+      <span class="nav-icon"><svg><use href="#ic-prompt"/></svg></span>
+      Terminal
+    </div>
+    <div class="nav-item" data-panel="logcat">
+      <span class="nav-icon"><svg><use href="#ic-logcat"/></svg></span>
+      Logcat
+    </div>
+    <div class="nav-item" data-panel="history">
+      <span class="nav-icon"><svg><use href="#ic-clock"/></svg></span>
+      History
+    </div>
+
+    <span class="nav-section-label">Diagnostics</span>
+    <div class="nav-item" data-panel="log">
+      <span class="nav-icon"><svg><use href="#ic-terminal"/></svg></span>
+      Output Log
+    </div>
+    <div class="nav-item" data-panel="setup" id="setupNavItem">
+      <span class="nav-icon"><svg><use href="#ic-wrench"/></svg></span>
+      Setup
+      <span class="nav-badge" id="setupBadge" style="display:none;margin-left:auto;background:var(--red);color:#fff;font-size:10px;font-weight:700;padding:1px 6px;border-radius:20px;">!</span>
+    </div>
+  </nav>
+
+  <!-- ── Content ─────────────────────────────────────────────────── -->
+  <main class="content">
+
+    <!-- Device panel -->
+    <div class="panel active" id="panel-device">
+
+      <!-- Authorization required banner -->
+      <div class="auth-banner" id="authBanner">
+        <div class="auth-banner-icon"><svg><use href="#ic-smartphone"/></svg></div>
+        <div class="auth-banner-body">
+          <div class="auth-banner-title"><span class="auth-pulse"></span>Authorization required</div>
+          <div class="auth-banner-desc">
+            Check your phone — tap <strong>Allow</strong> on the "Allow USB debugging?" prompt.
+            The device list updates automatically once authorized.
+          </div>
+          <button class="auth-broken-toggle" id="brokenScreenToggle">
+            <svg width="13" height="13"><use href="#ic-chevron-down"/></svg>
+            Can't see the screen?
+          </button>
+        </div>
+      </div>
+
+      <!-- Broken screen / no display recovery panel -->
+      <div class="broken-screen-panel" id="brokenScreenPanel" style="display:none;">
+        <div class="bsp-header">
+          <svg width="16" height="16"><use href="#ic-alert-circle"/></svg>
+          Broken screen or no display — recovery options
+        </div>
+
+        <!-- Option 1: OTG Input Mode -->
+        <div class="bsp-option" id="bspOtgOption">
+          <div class="bsp-option-number">1</div>
+          <div class="bsp-option-body">
+            <div class="bsp-option-title">OTG Input Mode <span class="bsp-badge">Recommended</span></div>
+            <div class="bsp-option-desc">
+              Uses the Android Open Accessory protocol — requires <strong>no authorization</strong> and works even with USB debugging disabled. Injects keyboard and touch input directly so you can navigate to <em>Settings → Developer Options → USB Debugging</em>.
+            </div>
+            <div class="bsp-option-steps">
+              <div class="bsp-step"><span class="bsp-step-n">1</span>Plug phone via USB and click Launch OTG below</div>
+              <div class="bsp-step"><span class="bsp-step-n">2</span>Your keyboard/mouse now controls the phone</div>
+              <div class="bsp-step"><span class="bsp-step-n">3</span>Navigate: Settings → About Phone → tap Build Number 7× → Developer Options → Enable USB Debugging</div>
+              <div class="bsp-step"><span class="bsp-step-n">4</span>Return here, hit Refresh — the auth dialog will appear, press Tab + Enter to accept it</div>
+            </div>
+            <button class="c-btn bsp-action-btn" id="otgLaunchBtn">
+              <svg><use href="#ic-zap"/></svg>
+              Launch OTG Input Mode
+            </button>
+            <div class="bsp-otg-status" id="otgStatus" style="display:none;"></div>
+          </div>
+        </div>
+
+        <!-- Option 2: Wireless pairing -->
+        <div class="bsp-option">
+          <div class="bsp-option-number">2</div>
+          <div class="bsp-option-body">
+            <div class="bsp-option-title">Wireless Pairing <span class="bsp-badge bsp-badge-dim">Android 11+</span></div>
+            <div class="bsp-option-desc">
+              If you can navigate the phone at all (e.g. via TalkBack / screen reader), enable <em>Settings → Developer Options → Wireless debugging</em>, then pair with a code here.
+            </div>
+            <div class="bsp-wireless-form">
+              <input class="c-input" type="text" id="wirelessIp"   placeholder="192.168.x.x" style="width:140px;" />
+              <input class="c-input" type="text" id="wirelessPort" placeholder="Port" style="width:80px;" />
+              <input class="c-input" type="text" id="wirelessCode" placeholder="Pair code" style="width:100px;" />
+              <button class="c-btn" id="wirelessPairBtn">
+                <svg><use href="#ic-zap"/></svg>
+                Pair
+              </button>
+            </div>
+            <div class="bsp-wireless-hint">Find the IP, port, and 6-digit code under Wireless debugging on the device.</div>
+            <div class="bsp-result" id="wirelessResult" style="display:none;"></div>
+          </div>
+        </div>
+
+        <!-- Option 3: ADB key -->
+        <div class="bsp-option">
+          <div class="bsp-option-number">3</div>
+          <div class="bsp-option-body">
+            <div class="bsp-option-title">Pre-trust this computer's ADB key <span class="bsp-badge bsp-badge-dim">Root / Recovery</span></div>
+            <div class="bsp-option-desc">
+              If the device has root access or you can mount it in recovery, push this computer's ADB public key to <code>/data/misc/adb/adb_keys</code>. The device will then auto-authorize on next connect.
+            </div>
+            <div class="bsp-key-row">
+              <div class="bsp-key-box" id="adbPublicKey">Loading…</div>
+              <button class="c-btn" id="copyAdbKeyBtn">
+                <svg><use href="#ic-check"/></svg>
+                Copy key
+              </button>
+            </div>
+            <div class="bsp-wireless-hint">On a rooted device: <code>adb push ~/.android/adbkey.pub /data/misc/adb/adb_keys</code></div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="device-bar">
+        <span class="device-bar-label">Device</span>
+        <div id="deviceSelectWrap" class="c-select" style="flex:1;">
+          <div class="c-select-trigger" id="deviceTrigger">
+            <span class="c-select-value-text">Scanning…</span>
+            <svg class="c-select-chevron"><use href="#ic-chevron-down"/></svg>
+          </div>
+          <div class="c-select-panel" id="devicePanel"></div>
+        </div>
+        <button class="c-icon-btn" id="refreshBtn" title="Refresh devices">
+          <svg><use href="#ic-refresh"/></svg>
+        </button>
+      </div>
+
+      <div class="card">
+        <div class="card-header">Quick Settings</div>
+        <div class="card-body" style="padding:12px;">
+          <div class="toggle-grid">
+            <div class="toggle-tile" onclick="toggleCheck('noControl')">
+              <div class="toggle-tile-info">
+                <span class="toggle-tile-label">View Only</span>
+                <span class="toggle-tile-hint">Disable device control</span>
+              </div>
+              <label class="c-toggle" onclick="event.stopPropagation()">
+                <input type="checkbox" id="noControl">
+                <span class="c-toggle-track"></span>
+                <span class="c-toggle-thumb"></span>
+              </label>
+            </div>
+            <div class="toggle-tile" onclick="toggleCheck('turnScreenOff')">
+              <div class="toggle-tile-info">
+                <span class="toggle-tile-label">Screen Off</span>
+                <span class="toggle-tile-hint">Turn off device display</span>
+              </div>
+              <label class="c-toggle" onclick="event.stopPropagation()">
+                <input type="checkbox" id="turnScreenOff">
+                <span class="c-toggle-track"></span>
+                <span class="c-toggle-thumb"></span>
+              </label>
+            </div>
+            <div class="toggle-tile" onclick="toggleCheck('stayAwake')">
+              <div class="toggle-tile-info">
+                <span class="toggle-tile-label">Stay Awake</span>
+                <span class="toggle-tile-hint">Prevent device sleep</span>
+              </div>
+              <label class="c-toggle" onclick="event.stopPropagation()">
+                <input type="checkbox" id="stayAwake">
+                <span class="c-toggle-track"></span>
+                <span class="c-toggle-thumb"></span>
+              </label>
+            </div>
+            <div class="toggle-tile" onclick="toggleCheck('showTouches')">
+              <div class="toggle-tile-info">
+                <span class="toggle-tile-label">Show Touches</span>
+                <span class="toggle-tile-hint">Touch point indicators</span>
+              </div>
+              <label class="c-toggle" onclick="event.stopPropagation()">
+                <input type="checkbox" id="showTouches">
+                <span class="c-toggle-track"></span>
+                <span class="c-toggle-thumb"></span>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Device info widget -->
+      <div class="device-info-widget" id="deviceInfoWidget" style="display:none;">
+        <div class="di-cell" id="diBattery"><svg width="14" height="14"><use href="#ic-battery"/></svg> —</div>
+        <div class="di-sep"></div>
+        <div class="di-cell" id="diModel"><svg width="14" height="14"><use href="#ic-smartphone"/></svg> —</div>
+        <div class="di-sep"></div>
+        <div class="di-cell" id="diAndroid"><svg width="14" height="14"><use href="#ic-cpu"/></svg> —</div>
+        <div class="di-sep"></div>
+        <div class="di-cell" id="diRes"><svg width="14" height="14"><use href="#ic-monitor"/></svg> —</div>
+        <div class="di-sep"></div>
+        <div class="di-cell di-wifi" id="diWifi" style="display:none;">
+          <svg width="14" height="14"><use href="#ic-wifi"/></svg>
+          <span id="diWifiIp">—</span>
+          <button class="di-wifi-btn" id="wifiSwitchBtn" title="Switch to wireless">Switch to WiFi</button>
+        </div>
+      </div>
+
+      <!-- Presets -->
+      <div class="card">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Presets</span>
+          <button class="c-btn" id="savePresetBtn" style="padding:4px 10px;font-size:11px;">
+            <svg><use href="#ic-plus"/></svg> Save current
+          </button>
+        </div>
+        <div class="card-body" style="padding:10px;">
+          <div class="presets-grid" id="presetsGrid"></div>
+        </div>
+      </div>
+
+      <!-- Quick actions (shown only when running) -->
+      <div class="card" id="quickActionsCard" style="display:none;">
+        <div class="card-header">Quick Actions</div>
+        <div class="card-body" style="padding:10px 12px;">
+          <div class="qa-row">
+            <button class="qa-btn" data-action="back"    title="Back"><svg><use href="#ic-chevron-down"/></svg><span>Back</span></button>
+            <button class="qa-btn" data-action="home"    title="Home"><svg><use href="#ic-smartphone"/></svg><span>Home</span></button>
+            <button class="qa-btn" data-action="recents" title="Recents"><svg><use href="#ic-layers"/></svg><span>Recents</span></button>
+            <div class="qa-sep"></div>
+            <button class="qa-btn" data-action="voldown" title="Vol -"><svg><use href="#ic-volume"/></svg><span>Vol −</span></button>
+            <button class="qa-btn" data-action="volup"   title="Vol +"><svg><use href="#ic-volume"/></svg><span>Vol +</span></button>
+            <div class="qa-sep"></div>
+            <button class="qa-btn" data-action="screenshot" title="Screenshot"><svg><use href="#ic-camera"/></svg><span>Shot</span></button>
+            <button class="qa-btn" data-action="rotate"  title="Rotate"><svg><use href="#ic-rotate-cw"/></svg><span>Rotate</span></button>
+            <button class="qa-btn" data-action="power"   title="Lock screen"><svg><use href="#ic-record"/></svg><span>Lock</span></button>
+          </div>
+          <div class="qa-feedback" id="qaFeedback"></div>
+        </div>
+      </div>
+
+      <!-- Multi-device active sessions -->
+      <div id="extraSessionsCard" style="display:none;">
+        <div style="font-size:11px;font-weight:700;letter-spacing:0.08em;text-transform:uppercase;color:var(--sub);margin-bottom:8px;">Active Sessions</div>
+        <div id="extraSessionsList"></div>
+      </div>
+
+      <!-- Auto-reconnect toggle -->
+      <div class="card">
+        <div class="card-header">Connection</div>
+        <div class="card-body">
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Auto-reconnect</span>
+              <span class="field-hint">Re-launch when device reconnects</span>
+            </div>
+            <div class="field-control">
+              <label class="c-toggle"><input type="checkbox" id="autoReconnect"><span class="c-toggle-track"></span><span class="c-toggle-thumb"></span></label>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Launch additional device</span>
+              <span class="field-hint">Open a second scrcpy window</span>
+            </div>
+            <div class="field-control">
+              <button class="c-btn" id="launchExtraBtn"><svg><use href="#ic-plus"/></svg> Add device</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">Command Preview</div>
+        <div class="card-body">
+          <div class="args-preview" id="argsPreview">scrcpy</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Video panel -->
+    <div class="panel" id="panel-video">
+      <div class="card">
+        <div class="card-header">Resolution &amp; Frame Rate</div>
+        <div class="card-body">
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Max Size</span>
+              <span class="field-hint">Longest edge in pixels</span>
+            </div>
+            <div class="field-control">
+              <div class="c-slider-wrap">
+                <input class="c-slider" type="range" id="maxSizeRange" min="0" max="1920" step="120" value="0">
+                <span class="c-slider-val" id="maxSizeVal">Off</span>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Max FPS</span>
+              <span class="field-hint">Cap the frame rate</span>
+            </div>
+            <div class="field-control">
+              <div class="c-slider-wrap">
+                <input class="c-slider" type="range" id="maxFpsRange" min="0" max="120" step="5" value="0">
+                <span class="c-slider-val" id="maxFpsVal">Off</span>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Bit Rate</span>
+              <span class="field-hint">Video quality</span>
+            </div>
+            <div class="field-control">
+              <div class="c-slider-wrap">
+                <input class="c-slider" type="range" id="videoBitrateRange" min="1" max="50" step="1" value="8">
+                <span class="c-slider-val" id="videoBitrateVal">8 Mbps</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-header">Codec &amp; Source</div>
+        <div class="card-body">
+          <div class="field">
+            <div class="field-meta"><span class="field-label">Video Codec</span></div>
+            <div class="field-control" id="videoCodecWrap"></div>
+          </div>
+          <div class="field">
+            <div class="field-meta"><span class="field-label">Video Source</span></div>
+            <div class="field-control" id="videoSourceWrap"></div>
+          </div>
+          <div class="field" id="cameraFacingField">
+            <div class="field-meta"><span class="field-label">Camera Facing</span></div>
+            <div class="field-control" id="cameraFacingWrap"></div>
+          </div>
+          <div class="field">
+            <div class="field-meta"><span class="field-label">Orientation</span></div>
+            <div class="field-control" id="orientationWrap"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audio panel -->
+    <div class="panel" id="panel-audio">
+      <div class="card">
+        <div class="card-header">Audio Settings</div>
+        <div class="card-body">
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Disable Audio</span>
+              <span class="field-hint">No audio forwarding</span>
+            </div>
+            <div class="field-control">
+              <label class="c-toggle">
+                <input type="checkbox" id="noAudio">
+                <span class="c-toggle-track"></span>
+                <span class="c-toggle-thumb"></span>
+              </label>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-meta"><span class="field-label">Audio Source</span></div>
+            <div class="field-control" id="audioSourceWrap"></div>
+          </div>
+          <div class="field">
+            <div class="field-meta"><span class="field-label">Audio Codec</span></div>
+            <div class="field-control" id="audioCodecWrap"></div>
+          </div>
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Bit Rate</span>
+              <span class="field-hint">Audio quality</span>
+            </div>
+            <div class="field-control">
+              <div class="c-slider-wrap">
+                <input class="c-slider" type="range" id="audioBitrateRange" min="64" max="320" step="32" value="128">
+                <span class="c-slider-val" id="audioBitrateVal">128 Kbps</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Window panel -->
+    <div class="panel" id="panel-window">
+      <div class="card">
+        <div class="card-header">Window Options</div>
+        <div class="card-body">
+          <div class="field">
+            <div class="field-meta"><span class="field-label">Fullscreen</span></div>
+            <div class="field-control">
+              <label class="c-toggle"><input type="checkbox" id="fullscreen"><span class="c-toggle-track"></span><span class="c-toggle-thumb"></span></label>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-meta"><span class="field-label">Always on Top</span></div>
+            <div class="field-control">
+              <label class="c-toggle"><input type="checkbox" id="alwaysOnTop"><span class="c-toggle-track"></span><span class="c-toggle-thumb"></span></label>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-meta"><span class="field-label">Borderless</span></div>
+            <div class="field-control">
+              <label class="c-toggle"><input type="checkbox" id="borderless"><span class="c-toggle-track"></span><span class="c-toggle-thumb"></span></label>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Window Title</span>
+              <span class="field-hint">Custom title bar text</span>
+            </div>
+            <div class="field-control">
+              <input class="c-input" type="text" id="windowTitle" placeholder="scrcpy" style="width:180px;" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Input panel -->
+    <div class="panel" id="panel-input">
+      <div class="card">
+        <div class="card-header">Input Modes</div>
+        <div class="card-body">
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Keyboard Mode</span>
+              <span class="field-hint">How keystrokes are injected</span>
+            </div>
+            <div class="field-control" id="keyboardModeWrap"></div>
+          </div>
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Mouse Mode</span>
+              <span class="field-hint">How pointer events are sent</span>
+            </div>
+            <div class="field-control" id="mouseModeWrap"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Recording panel -->
+    <div class="panel" id="panel-record">
+      <div class="card">
+        <div class="card-header">Recording</div>
+        <div class="card-body">
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Enable Recording</span>
+              <span class="field-hint">Save session to file</span>
+            </div>
+            <div class="field-control">
+              <label class="c-toggle"><input type="checkbox" id="record"><span class="c-toggle-track"></span><span class="c-toggle-thumb"></span></label>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-meta">
+              <span class="field-label">Output File</span>
+            </div>
+            <div class="field-control" style="flex:1; max-width:340px;">
+              <div class="path-row">
+                <input class="c-input" type="text" id="recordPath" placeholder="~/Desktop/recording.mp4" />
+                <button class="c-btn" id="pickFileBtn">
+                  <svg><use href="#ic-folder"/></svg>
+                  Browse
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="field">
+            <div class="field-meta"><span class="field-label">Format</span></div>
+            <div class="field-control" id="recordFormatWrap"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Log panel -->
+    <div class="panel" id="panel-log">
+      <div class="log-toolbar">
+        <div class="log-status">
+          <span class="log-dot" id="logDot"></span>
+          <span id="logStatusText">Not running</span>
+        </div>
+        <button class="c-btn" id="clearLogBtn">Clear</button>
+      </div>
+      <div class="log-box" id="logBox"></div>
+    </div>
+
+    <!-- Setup panel -->
+    <div class="panel" id="panel-setup">
+
+      <div class="setup-header">
+        <div class="setup-header-icon"><svg><use href="#ic-wrench"/></svg></div>
+        <div>
+          <div class="setup-title">Setup</div>
+          <div class="setup-sub">Required tools for scrcpy to function</div>
+        </div>
+      </div>
+
+      <!-- ADB card -->
+      <div class="dep-card" id="depCardAdb">
+        <div class="dep-icon err" id="depIconAdb"><svg><use href="#ic-alert-circle"/></svg></div>
+        <div class="dep-body">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span class="dep-name">Android Debug Bridge (adb)</span>
+            <span class="dep-badge err" id="depBadgeAdb">
+              <svg><use href="#ic-alert-circle"/></svg> Not found
+            </span>
+          </div>
+          <div class="dep-desc">
+            adb communicates with your Android device over USB or Wi-Fi.
+            It ships as part of <strong>Android Platform Tools</strong>.
+          </div>
+          <div class="dep-path missing" id="depPathAdb">Not found in PATH or common locations</div>
+          <div class="dep-actions" id="adbInstallActions">
+            <button class="c-btn" id="adbAutoInstallBtn">
+              <svg><use href="#ic-download"/></svg>
+              Auto Install
+            </button>
+            <button class="c-btn" id="adbLocateBtn">
+              <svg><use href="#ic-folder"/></svg>
+              Locate manually
+            </button>
+          </div>
+          <div class="dep-actions dep-manage-actions" id="adbManageActions" style="display:none;">
+            <button class="c-btn" id="adbRepairBtn">
+              <svg><use href="#ic-refresh"/></svg>
+              Repair
+            </button>
+            <button class="c-btn" id="adbRemoveBtn" style="color:var(--red);border-color:rgba(240,71,106,0.3);">
+              <svg><use href="#ic-stop"/></svg>
+              Remove
+            </button>
+          </div>
+
+          <!-- Download progress (hidden by default) -->
+          <div class="dl-progress" id="adbDlProgress" style="display:none;">
+            <div class="dl-progress-bar-wrap">
+              <div class="dl-progress-bar" id="adbDlBar"></div>
+            </div>
+            <span class="dl-progress-label" id="adbDlLabel">Connecting…</span>
+          </div>
+
+          <div class="path-override">
+            <input class="c-input" type="text" id="adbPathInput" placeholder="/path/to/adb" />
+            <button class="c-btn" id="adbSavePathBtn">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- scrcpy card -->
+      <div class="dep-card" id="depCardScrcpy">
+        <div class="dep-icon err" id="depIconScrcpy"><svg><use href="#ic-alert-circle"/></svg></div>
+        <div class="dep-body">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+            <span class="dep-name">scrcpy</span>
+            <span class="dep-badge err" id="depBadgeScrcpy">
+              <svg><use href="#ic-alert-circle"/></svg> Not found
+            </span>
+          </div>
+          <div class="dep-desc">
+            The scrcpy binary mirrors and controls your Android screen.
+            Install via Homebrew or download a pre-built release.
+          </div>
+          <div class="dep-path missing" id="depPathScrcpy">Not found in PATH or common locations</div>
+          <div class="dep-actions" id="scrcpyInstallActions">
+            <button class="c-btn" id="scrcpyAutoInstallBtn">
+              <svg><use href="#ic-download"/></svg>
+              Auto Install
+            </button>
+            <button class="c-btn" id="scrcpyLocateBtn">
+              <svg><use href="#ic-folder"/></svg>
+              Locate manually
+            </button>
+          </div>
+          <div class="dep-actions dep-manage-actions" id="scrcpyManageActions" style="display:none;">
+            <button class="c-btn" id="scrcpyRepairBtn">
+              <svg><use href="#ic-refresh"/></svg>
+              Repair
+            </button>
+            <button class="c-btn" id="scrcpyRemoveBtn" style="color:var(--red);border-color:rgba(240,71,106,0.3);">
+              <svg><use href="#ic-stop"/></svg>
+              Remove
+            </button>
+          </div>
+
+          <!-- Download progress (hidden by default) -->
+          <div class="dl-progress" id="scrcpyDlProgress" style="display:none;">
+            <div class="dl-progress-bar-wrap">
+              <div class="dl-progress-bar" id="scrcpyDlBar"></div>
+            </div>
+            <span class="dl-progress-label" id="scrcpyDlLabel">Connecting…</span>
+          </div>
+
+          <div class="path-override">
+            <input class="c-input" type="text" id="scrcpyPathInput" placeholder="/path/to/scrcpy" />
+            <button class="c-btn" id="scrcpySavePathBtn">Save</button>
+          </div>
+        </div>
+      </div>
+
+      <button class="c-btn" id="recheckDepsBtn" style="margin-top:4px;width:100%;justify-content:center;padding:10px;">
+        <svg><use href="#ic-refresh"/></svg>
+        Check Again
+      </button>
+
+    </div>
+
+    <!-- ── Tools panel (APK + Apps) ───────────────────────── -->
+    <div class="panel" id="panel-tools">
+
+      <!-- APK sideloader -->
+      <div class="card">
+        <div class="card-header">APK Installer</div>
+        <div class="card-body">
+          <div class="apk-dropzone" id="apkDropzone">
+            <svg width="28" height="28" style="color:var(--muted)"><use href="#ic-package"/></svg>
+            <span class="apk-drop-label">Drop an APK here</span>
+            <span class="apk-drop-sub">or</span>
+            <button class="c-btn" id="pickApkBtn"><svg><use href="#ic-folder"/></svg> Browse APK</button>
+          </div>
+          <div class="apk-selected" id="apkSelected" style="display:none;">
+            <span class="apk-filename" id="apkFilename"></span>
+            <button class="c-btn" id="installApkBtn"><svg><use href="#ic-download"/></svg> Install</button>
+            <button class="c-btn" id="clearApkBtn"><svg><use href="#ic-trash"/></svg></button>
+          </div>
+          <div class="apk-output" id="apkOutput" style="display:none;"></div>
+        </div>
+      </div>
+
+      <!-- App launcher -->
+      <div class="card">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>Installed Apps</span>
+          <button class="c-btn" id="loadAppsBtn" style="padding:4px 10px;font-size:11px;">
+            <svg><use href="#ic-refresh"/></svg> Load
+          </button>
+        </div>
+        <div class="card-body" style="padding:10px;">
+          <div class="app-search-row">
+            <span style="color:var(--muted);display:flex;align-items:center;"><svg width="14" height="14"><use href="#ic-search"/></svg></span>
+            <input class="c-input" type="text" id="appSearch" placeholder="Filter packages…" style="flex:1;border:none;background:transparent;padding:4px 8px;" />
+          </div>
+          <div class="app-list" id="appList">
+            <div class="app-empty">Click Load to fetch installed apps</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Terminal panel ──────────────────────────────────── -->
+    <div class="panel" id="panel-terminal">
+      <div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 200px);">
+        <div class="card-header" style="display:flex;align-items:center;justify-content:space-between;">
+          <span>ADB Shell</span>
+          <button class="c-btn" id="clearTermBtn" style="padding:4px 10px;font-size:11px;">Clear</button>
+        </div>
+        <div class="term-output" id="termOutput"></div>
+        <div class="term-input-row">
+          <span class="term-prompt">$</span>
+          <input class="term-input" type="text" id="termInput" placeholder="adb shell command…" autocomplete="off" spellcheck="false" />
+          <button class="c-btn" id="termSendBtn"><svg><use href="#ic-play"/></svg></button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── Logcat panel ────────────────────────────────────── -->
+    <div class="panel" id="panel-logcat">
+      <div class="card" style="display:flex;flex-direction:column;height:calc(100vh - 200px);">
+        <div class="card-header">
+          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap;">
+            <span>Logcat</span>
+            <input class="c-input" type="text" id="logcatTag" placeholder="Tag filter" style="width:120px;padding:4px 8px;font-size:12px;" />
+            <div id="logLevelWrap" style="min-width:110px;"></div>
+            <div style="margin-left:auto;display:flex;gap:8px;">
+              <button class="c-btn" id="logcatStartBtn" style="padding:4px 10px;font-size:11px;"><svg><use href="#ic-play"/></svg> Start</button>
+              <button class="c-btn" id="logcatStopBtn"  style="padding:4px 10px;font-size:11px;" disabled><svg><use href="#ic-stop"/></svg> Stop</button>
+              <button class="c-btn" id="logcatClearBtn" style="padding:4px 10px;font-size:11px;">Clear</button>
+            </div>
+          </div>
+        </div>
+        <div class="logcat-output" id="logcatOutput"></div>
+      </div>
+    </div>
+
+    <!-- ── History panel ───────────────────────────────────── -->
+    <div class="panel" id="panel-history">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px;">
+        <span style="font-size:13px;color:var(--sub);">Past sessions</span>
+        <button class="c-btn" id="clearHistoryBtn"><svg><use href="#ic-trash"/></svg> Clear all</button>
+      </div>
+      <div id="historyList"></div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Update banner (hidden) -->
+<div class="update-banner" id="updateBanner" style="display:none;">
+  <svg width="15" height="15"><use href="#ic-zap"/></svg>
+  <span id="updateBannerText">A new version of scrcpy is available.</span>
+  <button class="c-btn" id="updateDownloadBtn" style="padding:4px 10px;font-size:11px;margin-left:8px;"><svg><use href="#ic-download"/></svg> Download</button>
+  <button class="update-dismiss" id="updateDismissBtn">×</button>
+</div>
+
+<!-- Launch bar -->
+<div class="launch-bar">
+  <button class="btn-launch" id="launchBtn">
+    <svg><use href="#ic-play"/></svg>
+    Launch scrcpy
+  </button>
+  <button class="btn-stop" id="stopBtn">
+    <svg><use href="#ic-stop"/></svg>
+    Stop
+  </button>
+</div>
+
+<script>
+// ── CustomSelect class ────────────────────────────────────────────────────────
+
+class CustomSelect {
+  constructor(container, options, onChange) {
+    this.options = options;
+    this.value = options[0].value;
+    this.onChange = onChange;
+    this._open = false;
+
+    // Trigger
+    this.wrap = document.createElement('div');
+    this.wrap.className = 'c-select';
+    this.wrap.style.minWidth = '160px';
+
+    this.trigger = document.createElement('div');
+    this.trigger.className = 'c-select-trigger';
+
+    this.valueText = document.createElement('span');
+    this.valueText.className = 'c-select-value-text';
+    this.valueText.textContent = options[0].label;
+
+    const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    chevron.setAttribute('class', 'c-select-chevron');
+    const use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttributeNS('http://www.w3.org/1999/xlink', 'href', '#ic-chevron-down');
+    chevron.appendChild(use);
+
+    this.trigger.appendChild(this.valueText);
+    this.trigger.appendChild(chevron);
+
+    // Panel
+    this.panel = document.createElement('div');
+    this.panel.className = 'c-select-panel';
+    this._renderOptions();
+
+    this.wrap.appendChild(this.trigger);
+    this.wrap.appendChild(this.panel);
+    container.appendChild(this.wrap);
+
+    // Events
+    this.trigger.addEventListener('click', (e) => {
+      e.stopPropagation();
+      this._toggle();
+    });
+
+    document.addEventListener('click', () => this._close());
+  }
+
+  _renderOptions() {
+    this.panel.innerHTML = '';
+    this.options.forEach(opt => {
+      const el = document.createElement('div');
+      el.className = 'c-select-option' + (opt.value === this.value ? ' selected' : '');
+      el.dataset.value = opt.value;
+
+      const label = document.createElement('span');
+      label.textContent = opt.label;
+
+      const check = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      check.setAttribute('class', 'c-select-check');
+      const useEl = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+      useEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', '#ic-check');
+      check.appendChild(useEl);
+
+      el.appendChild(label);
+      el.appendChild(check);
+
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.setValue(opt.value);
+        this._close();
+      });
+
+      this.panel.appendChild(el);
+    });
+  }
+
+  setValue(val) {
+    this.value = val;
+    const opt = this.options.find(o => o.value === val);
+    if (opt) this.valueText.textContent = opt.label;
+    this._renderOptions();
+    this.onChange && this.onChange(val);
+  }
+
+  getValue() { return this.value; }
+
+  _toggle() { this._open ? this._close() : this._openPanel(); }
+
+  _openPanel() {
+    // Close all others
+    document.querySelectorAll('.c-select.open').forEach(el => el.classList.remove('open'));
+    this._open = true;
+    this.wrap.classList.add('open');
+  }
+
+  _close() {
+    this._open = false;
+    this.wrap.classList.remove('open');
+  }
+}
+
+// ── Device dropdown (custom, managed separately) ──────────────────────────────
+
+let deviceValue = '';
+
+let authPollTimer = null;
+
+function stopAuthPoll() {
+  if (authPollTimer) { clearInterval(authPollTimer); authPollTimer = null; }
+}
+
+function startAuthPoll() {
+  stopAuthPoll();
+  // Re-check every 2s until all pending devices are authorized or gone
+  authPollTimer = setInterval(async () => {
+    const result = await window.scrcpy.listDevices();
+    const devices = result.devices || [];
+    const stillPending = devices.some(d => d.status === 'unauthorized');
+    buildDeviceDropdown(devices);
+    if (!stillPending) stopAuthPoll();
+  }, 2000);
+}
+
+function buildDeviceDropdown(devices) {
+  const panel = document.getElementById('devicePanel');
+  const wrap  = document.getElementById('deviceSelectWrap');
+  const valueText = document.querySelector('#deviceTrigger .c-select-value-text');
+  const authBanner = document.getElementById('authBanner');
+
+  panel.innerHTML = '';
+
+  const readyDevices = devices.filter(d => d.status === 'ready');
+  const pendingDevices = devices.filter(d => d.status !== 'ready');
+
+  // Authorization banner
+  if (pendingDevices.length > 0) {
+    authBanner.style.display = 'flex';
+    startAuthPoll();
+  } else {
+    authBanner.style.display = 'none';
+    stopAuthPoll();
+  }
+
+  if (!devices.length) {
+    valueText.textContent = 'No devices found';
+    panel.innerHTML = '<div class="c-select-option" style="color:var(--muted);cursor:default;">No ADB devices detected</div>';
+    deviceValue = '';
+    updatePreview();
+    return;
+  }
+
+  // Populate dropdown — ready devices are selectable, pending show status
+  const firstReady = readyDevices[0];
+  if (firstReady) {
+    deviceValue = firstReady.serial;
+    valueText.textContent = firstReady.label;
+  } else {
+    deviceValue = '';
+    valueText.textContent = 'Waiting for authorization…';
+  }
+
+  devices.forEach((d, i) => {
+    const el = document.createElement('div');
+    const isReady = d.status === 'ready';
+
+    el.className = 'c-select-option' + (d.serial === deviceValue ? ' selected' : '');
+    if (!isReady) el.style.cursor = 'default';
+    el.dataset.serial = d.serial;
+
+    const labelWrap = document.createElement('span');
+    labelWrap.style.display = 'flex';
+    labelWrap.style.alignItems = 'center';
+    labelWrap.style.gap = '8px';
+
+    const labelText = document.createElement('span');
+    labelText.textContent = d.label;
+    labelWrap.appendChild(labelText);
+
+    if (!isReady) {
+      const pill = document.createElement('span');
+      pill.textContent = d.status;
+      pill.style.cssText = 'font-size:10px;font-weight:600;padding:2px 7px;border-radius:20px;background:rgba(240,71,106,0.15);color:var(--red);';
+      labelWrap.appendChild(pill);
+    }
+
+    const check = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    check.setAttribute('class', 'c-select-check');
+    const useEl = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    useEl.setAttributeNS('http://www.w3.org/1999/xlink', 'href', '#ic-check');
+    check.appendChild(useEl);
+
+    el.appendChild(labelWrap);
+    el.appendChild(check);
+
+    if (isReady) {
+      el.addEventListener('click', (e) => {
+        e.stopPropagation();
+        deviceValue = d.serial;
+        valueText.textContent = d.label;
+        panel.querySelectorAll('.c-select-option').forEach(o => o.classList.remove('selected'));
+        el.classList.add('selected');
+        wrap.classList.remove('open');
+        updatePreview();
+      });
+    }
+
+    panel.appendChild(el);
+  });
+
+  updatePreview();
+}
+
+// Device trigger toggle
+document.getElementById('deviceTrigger').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const wrap = document.getElementById('deviceSelectWrap');
+  const isOpen = wrap.classList.contains('open');
+  document.querySelectorAll('.c-select.open').forEach(el => el.classList.remove('open'));
+  if (!isOpen) wrap.classList.add('open');
+});
+document.addEventListener('click', () => {
+  document.querySelectorAll('.c-select.open').forEach(el => el.classList.remove('open'));
+});
+
+// ── Init selects ─────────────────────────────────────────────────────────────
+
+const selects = {};
+
+function makeSelect(containerId, options, key) {
+  selects[key] = new CustomSelect(
+    document.getElementById(containerId),
+    options,
+    () => updatePreview()
+  );
+}
+
+makeSelect('videoCodecWrap', [
+  { value: 'default', label: 'Default (H.264)' },
+  { value: 'h264',    label: 'H.264' },
+  { value: 'h265',    label: 'H.265' },
+  { value: 'av1',     label: 'AV1' },
+], 'videoCodec');
+
+makeSelect('videoSourceWrap', [
+  { value: 'display', label: 'Display' },
+  { value: 'camera',  label: 'Camera' },
+], 'videoSource');
+
+selects['videoSource'].onChange = (val) => {
+  document.getElementById('cameraFacingField').style.display =
+    val === 'camera' ? 'flex' : 'none';
+  updatePreview();
+};
+
+makeSelect('cameraFacingWrap', [
+  { value: 'default',  label: 'Any' },
+  { value: 'front',    label: 'Front' },
+  { value: 'back',     label: 'Back' },
+  { value: 'external', label: 'External' },
+], 'cameraFacing');
+
+makeSelect('orientationWrap', [
+  { value: 'default', label: 'Default' },
+  { value: '0',       label: 'Portrait' },
+  { value: '90',      label: 'Landscape 90°' },
+  { value: '180',     label: 'Portrait 180°' },
+  { value: '270',     label: 'Landscape 270°' },
+  { value: 'flip0',   label: 'Portrait (flip)' },
+  { value: 'flip90',  label: 'Landscape flip 90°' },
+], 'orientation');
+
+makeSelect('audioSourceWrap', [
+  { value: 'default',  label: 'Default (Output)' },
+  { value: 'output',   label: 'Device Output' },
+  { value: 'mic',      label: 'Microphone' },
+  { value: 'playback', label: 'App Playback' },
+], 'audioSource');
+
+makeSelect('audioCodecWrap', [
+  { value: 'default', label: 'Default (Opus)' },
+  { value: 'opus',    label: 'Opus' },
+  { value: 'aac',     label: 'AAC' },
+  { value: 'flac',    label: 'FLAC' },
+  { value: 'raw',     label: 'Raw' },
+], 'audioCodec');
+
+makeSelect('keyboardModeWrap', [
+  { value: 'default',  label: 'Auto' },
+  { value: 'uhid',     label: 'UHID (virtual HID)' },
+  { value: 'aoa',      label: 'AOA' },
+  { value: 'sdk',      label: 'SDK' },
+  { value: 'disabled', label: 'Disabled' },
+], 'keyboardMode');
+
+makeSelect('mouseModeWrap', [
+  { value: 'default',  label: 'Auto' },
+  { value: 'uhid',     label: 'UHID' },
+  { value: 'aoa',      label: 'AOA' },
+  { value: 'sdk',      label: 'SDK' },
+  { value: 'disabled', label: 'Disabled' },
+], 'mouseMode');
+
+makeSelect('recordFormatWrap', [
+  { value: 'mp4', label: 'MP4' },
+  { value: 'mkv', label: 'MKV' },
+], 'recordFormat');
+
+// Hide camera field by default
+document.getElementById('cameraFacingField').style.display = 'none';
+
+// ── Sliders ───────────────────────────────────────────────────────────────────
+
+function updateSliderFill(range) {
+  const min = Number(range.min);
+  const max = Number(range.max);
+  const val = Number(range.value);
+  const pct = ((val - min) / (max - min)) * 100;
+  range.style.setProperty('--fill', `${pct}%`);
+}
+
+function linkSlider(rangeId, valId, fmt) {
+  const range = document.getElementById(rangeId);
+  const valEl = document.getElementById(valId);
+  const sync = () => {
+    valEl.textContent = fmt(Number(range.value));
+    updateSliderFill(range);
+    updatePreview();
+  };
+  range.addEventListener('input', sync);
+  sync();
+}
+
+linkSlider('maxSizeRange', 'maxSizeVal', v => v === 0 ? 'Off' : `${v} px`);
+linkSlider('maxFpsRange', 'maxFpsVal', v => v === 0 ? 'Off' : `${v} fps`);
+linkSlider('videoBitrateRange', 'videoBitrateVal', v => `${v} Mbps`);
+linkSlider('audioBitrateRange', 'audioBitrateVal', v => `${v} Kbps`);
+
+// ── Nav ───────────────────────────────────────────────────────────────────────
+
+document.querySelectorAll('.nav-item').forEach(item => {
+  item.addEventListener('click', () => {
+    document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+    document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+    item.classList.add('active');
+    document.getElementById(`panel-${item.dataset.panel}`).classList.add('active');
+  });
+});
+
+// ── Toggle helper ─────────────────────────────────────────────────────────────
+
+function toggleCheck(id) {
+  const el = document.getElementById(id);
+  el.checked = !el.checked;
+  updatePreview();
+}
+
+document.querySelectorAll('.c-toggle input[type="checkbox"]').forEach(cb => {
+  cb.addEventListener('change', updatePreview);
+});
+
+// ── Text inputs ───────────────────────────────────────────────────────────────
+
+document.getElementById('windowTitle').addEventListener('input', updatePreview);
+document.getElementById('recordPath').addEventListener('input', updatePreview);
+
+// ── File picker ───────────────────────────────────────────────────────────────
+
+document.getElementById('pickFileBtn').addEventListener('click', async () => {
+  const path = await window.scrcpy.pickFile();
+  if (path) {
+    document.getElementById('recordPath').value = path;
+    updatePreview();
+  }
+});
+
+// ── Collect options ───────────────────────────────────────────────────────────
+
+function g(id) { return document.getElementById(id); }
+function gv(id) { return g(id).value; }
+function gc(id) { return g(id).checked; }
+function gs(key) { return selects[key].getValue(); }
+
+function collectOpts() {
+  const maxSize = Number(gv('maxSizeRange'));
+  const maxFps = Number(gv('maxFpsRange'));
+  return {
+    serial:        deviceValue,
+    maxSize:       maxSize || undefined,
+    maxFps:        maxFps || undefined,
+    videoBitrate:  Number(gv('videoBitrateRange')),
+    videoCodec:    gs('videoCodec'),
+    videoSource:   gs('videoSource'),
+    cameraFacing:  gs('cameraFacing'),
+    orientation:   gs('orientation'),
+    noAudio:       gc('noAudio'),
+    audioSource:   gs('audioSource'),
+    audioCodec:    gs('audioCodec'),
+    fullscreen:    gc('fullscreen'),
+    alwaysOnTop:   gc('alwaysOnTop'),
+    borderless:    gc('borderless'),
+    windowTitle:   gv('windowTitle').trim(),
+    noControl:     gc('noControl'),
+    turnScreenOff: gc('turnScreenOff'),
+    stayAwake:     gc('stayAwake'),
+    showTouches:   gc('showTouches'),
+    record:        gc('record'),
+    recordPath:    gv('recordPath').trim(),
+    recordFormat:  gs('recordFormat'),
+    keyboardMode:  gs('keyboardMode'),
+    mouseMode:     gs('mouseMode'),
+  };
+}
+
+// ── Args builder (mirrors main.js buildArgs) ──────────────────────────────────
+
+function optsToArgs(opts) {
+  const a = ['scrcpy'];
+  if (opts.serial) a.push('--serial', opts.serial);
+  if (opts.maxSize) a.push('--max-size', String(opts.maxSize));
+  if (opts.maxFps) a.push('--max-fps', String(opts.maxFps));
+  if (opts.videoBitrate && opts.videoBitrate !== 8) a.push('--video-bit-rate', `${opts.videoBitrate}M`);
+  if (opts.videoCodec !== 'default') a.push('--video-codec', opts.videoCodec);
+  if (opts.videoSource === 'camera') {
+    a.push('--video-source', 'camera');
+    if (opts.cameraFacing !== 'default') a.push('--camera-facing', opts.cameraFacing);
+  }
+  if (opts.orientation !== 'default') a.push('--orientation', opts.orientation);
+  if (opts.noAudio) { a.push('--no-audio'); }
+  else {
+    if (opts.audioSource !== 'default') a.push('--audio-source', opts.audioSource);
+    if (opts.audioCodec !== 'default') a.push('--audio-codec', opts.audioCodec);
+  }
+  if (opts.fullscreen) a.push('--fullscreen');
+  if (opts.alwaysOnTop) a.push('--always-on-top');
+  if (opts.borderless) a.push('--window-borderless');
+  if (opts.windowTitle) a.push('--window-title', opts.windowTitle);
+  if (opts.noControl) a.push('--no-control');
+  if (opts.turnScreenOff) a.push('--turn-screen-off');
+  if (opts.stayAwake) a.push('--stay-awake');
+  if (opts.showTouches) a.push('--show-touches');
+  if (opts.keyboardMode !== 'default') a.push('--keyboard', opts.keyboardMode);
+  if (opts.mouseMode !== 'default') a.push('--mouse', opts.mouseMode);
+  if (opts.record && opts.recordPath) {
+    a.push('--record', opts.recordPath);
+    if (opts.recordFormat !== 'mp4') a.push('--record-format', opts.recordFormat);
+  }
+  return a;
+}
+
+function updatePreview() {
+  document.getElementById('argsPreview').textContent = optsToArgs(collectOpts()).join(' ');
+}
+
+// ── Launch / Stop ─────────────────────────────────────────────────────────────
+
+document.getElementById('launchBtn').addEventListener('click', async () => {
+  if (appState.running) return;
+  const opts = collectOpts();
+  await window.scrcpy.saveConfig(opts);
+  const result = await window.scrcpy.launch(opts);
+  if (!result.ok) {
+    appendLog(`[error] ${result.error}\n`, 'err');
+    document.querySelector('[data-panel="log"]').click();
+  }
+});
+
+document.getElementById('stopBtn').addEventListener('click', () => window.scrcpy.stop());
+
+// ── Status ────────────────────────────────────────────────────────────────────
+
+const appState = { running: false };
+
+function setRunning(running) {
+  appState.running = running;
+
+  const led = document.getElementById('titleStatusLed');
+  const txt = document.getElementById('titleStatusText');
+  const logDot = document.getElementById('logDot');
+  const logTxt = document.getElementById('logStatusText');
+
+  led.className = 'status-led' + (running ? ' running' : '');
+  txt.textContent = running ? 'Running' : 'Idle';
+  logDot.className = 'log-dot' + (running ? ' running' : '');
+  logTxt.textContent = running ? 'Running' : 'Not running';
+
+  const btn = document.getElementById('launchBtn');
+  btn.disabled = running;
+  btn.innerHTML = running
+    ? `<svg><use href="#ic-zap"/></svg> Running…`
+    : `<svg><use href="#ic-play"/></svg> Launch scrcpy`;
+
+  document.getElementById('stopBtn').classList.toggle('visible', running);
+}
+
+window.scrcpy.onStatus(s => setRunning(s === 'running'));
+
+// ── Log ───────────────────────────────────────────────────────────────────────
+
+function appendLog(text, cls) {
+  const box = document.getElementById('logBox');
+  const span = document.createElement('span');
+  if (cls) span.className = cls;
+  span.textContent = text;
+  box.appendChild(span);
+  box.scrollTop = box.scrollHeight;
+}
+
+window.scrcpy.onLog(text => appendLog(text));
+document.getElementById('clearLogBtn').addEventListener('click', () => {
+  document.getElementById('logBox').innerHTML = '';
+});
+
+// ── Config restore ────────────────────────────────────────────────────────────
+
+async function restoreConfig() {
+  const cfg = await window.scrcpy.loadConfig();
+  if (!cfg || !Object.keys(cfg).length) return;
+
+  const setRange = (id, val) => { if (val !== undefined) { document.getElementById(id).value = val; } };
+  const setCheck = (id, val) => { if (val !== undefined) document.getElementById(id).checked = val; };
+  const setInput = (id, val) => { if (val !== undefined) document.getElementById(id).value = val || ''; };
+
+  setRange('maxSizeRange', cfg.maxSize || 0);
+  setRange('maxFpsRange', cfg.maxFps || 0);
+  setRange('videoBitrateRange', cfg.videoBitrate || 8);
+  setRange('audioBitrateRange', 128);
+
+  if (cfg.videoCodec) selects.videoCodec.setValue(cfg.videoCodec);
+  if (cfg.videoSource) selects.videoSource.setValue(cfg.videoSource);
+  if (cfg.cameraFacing) selects.cameraFacing.setValue(cfg.cameraFacing);
+  if (cfg.orientation) selects.orientation.setValue(cfg.orientation);
+  if (cfg.audioSource) selects.audioSource.setValue(cfg.audioSource);
+  if (cfg.audioCodec) selects.audioCodec.setValue(cfg.audioCodec);
+  if (cfg.keyboardMode) selects.keyboardMode.setValue(cfg.keyboardMode);
+  if (cfg.mouseMode) selects.mouseMode.setValue(cfg.mouseMode);
+  if (cfg.recordFormat) selects.recordFormat.setValue(cfg.recordFormat);
+
+  setCheck('noAudio', cfg.noAudio);
+  setCheck('fullscreen', cfg.fullscreen);
+  setCheck('alwaysOnTop', cfg.alwaysOnTop);
+  setCheck('borderless', cfg.borderless);
+  setCheck('noControl', cfg.noControl);
+  setCheck('turnScreenOff', cfg.turnScreenOff);
+  setCheck('stayAwake', cfg.stayAwake);
+  setCheck('showTouches', cfg.showTouches);
+  setCheck('record', cfg.record);
+
+  setInput('windowTitle', cfg.windowTitle);
+  setInput('recordPath', cfg.recordPath);
+
+  document.getElementById('cameraFacingField').style.display =
+    cfg.videoSource === 'camera' ? 'flex' : 'none';
+
+  ['maxSizeRange','maxFpsRange','videoBitrateRange','audioBitrateRange'].forEach(id => {
+    const el = document.getElementById(id);
+    el.dispatchEvent(new Event('input'));
+  });
+}
+
+// ── Dependency check ──────────────────────────────────────────────────────────
+
+const DOWNLOAD_URLS = {
+  adb:    'https://developer.android.com/tools/releases/platform-tools',
+  scrcpy: 'https://github.com/Genymobile/scrcpy/releases/latest',
+};
+
+function applyDepStatus(name, info) {
+  const icon    = document.getElementById(`depIcon${cap(name)}`);
+  const badge   = document.getElementById(`depBadge${cap(name)}`);
+  const pathEl  = document.getElementById(`depPath${cap(name)}`);
+  const installActions = document.getElementById(`${name}InstallActions`);
+  const manageActions  = document.getElementById(`${name}ManageActions`);
+
+  if (info.found) {
+    icon.className   = 'dep-icon ok';
+    icon.innerHTML   = `<svg><use href="#ic-check-circle"/></svg>`;
+    badge.className  = 'dep-badge ok';
+    badge.innerHTML  = `<svg><use href="#ic-check-circle"/></svg> Found`;
+    pathEl.className = 'dep-path';
+    pathEl.textContent = info.path;
+    document.getElementById(`${name}PathInput`).value = info.path;
+
+    // Show Repair / Remove only when we own the install
+    if (info.managedByUs) {
+      installActions.style.display = 'none';
+      manageActions.style.display  = 'flex';
+    } else {
+      installActions.style.display = 'flex';
+      manageActions.style.display  = 'none';
+    }
+  } else {
+    icon.className   = 'dep-icon err';
+    icon.innerHTML   = `<svg><use href="#ic-alert-circle"/></svg>`;
+    badge.className  = 'dep-badge err';
+    badge.innerHTML  = `<svg><use href="#ic-alert-circle"/></svg> Not found`;
+    pathEl.className = 'dep-path missing';
+    pathEl.textContent = 'Not found in PATH or common locations';
+    installActions.style.display = 'flex';
+    manageActions.style.display  = 'none';
+  }
+}
+
+function cap(s) { return s[0].toUpperCase() + s.slice(1); }
+
+async function checkDeps() {
+  const deps = await window.scrcpy.checkDeps();
+  applyDepStatus('adb', deps.adb);
+  applyDepStatus('scrcpy', deps.scrcpy);
+
+  const allOk = deps.adb.found && deps.scrcpy.found;
+  document.getElementById('setupBadge').style.display = allOk ? 'none' : 'inline';
+
+  // Disable launch if scrcpy missing
+  const launchBtn = document.getElementById('launchBtn');
+  if (!deps.scrcpy.found) {
+    launchBtn.disabled = true;
+    launchBtn.title = 'scrcpy not found — configure in Setup';
+  }
+
+  return deps;
+}
+
+// ── Progress bar helpers ──────────────────────────────────────────────────────
+
+function setDlProgress(name, pct, label, state) {
+  const wrap = document.getElementById(`${name}DlProgress`);
+  const bar  = document.getElementById(`${name}DlBar`);
+  const txt  = document.getElementById(`${name}DlLabel`);
+  if (!wrap) return;
+  wrap.style.display = 'block';
+  bar.style.width    = `${pct}%`;
+  bar.className      = `dl-progress-bar${state ? ' ' + state : ''}`;
+  txt.textContent    = label;
+  txt.className      = `dl-progress-label${state === 'error' ? ' error' : ''}`;
+}
+
+window.scrcpy.onDownloadProgress(({ name, phase, pct, detail }) => {
+  const labels = {
+    fetching:    'Checking latest release…',
+    extracting:  'Extracting archive…',
+    installing:  `Installing ${name}…`,
+  };
+  if (phase === 'downloading') setDlProgress(name, pct,  detail, null);
+  else if (phase === 'done')   setDlProgress(name, 100, `Installed: ${detail}`, 'done');
+  else if (phase === 'error')  setDlProgress(name, 100, `Error: ${detail}`, 'error');
+  else                         setDlProgress(name, pct,  labels[phase] ?? phase, null);
+});
+
+// ── Auto-install buttons ──────────────────────────────────────────────────────
+
+async function runAutoInstall(name, downloadFn) {
+  const btn = document.getElementById(`${name}AutoInstallBtn`);
+  const repairBtn = document.getElementById(`${name}RepairBtn`);
+  const activeBtn = btn.offsetParent ? btn : repairBtn;
+
+  activeBtn.disabled = true;
+  const orig = activeBtn.innerHTML;
+  activeBtn.innerHTML = `<svg><use href="#ic-download"/></svg> Installing…`;
+  setDlProgress(name, 0, 'Starting…', null);
+
+  const result = await downloadFn();
+
+  activeBtn.disabled = false;
+  activeBtn.innerHTML = orig;
+
+  if (result.ok) {
+    await checkDeps();
+    await refreshDevices();
+  }
+}
+
+document.getElementById('adbAutoInstallBtn').addEventListener('click', () =>
+  runAutoInstall('adb', () => window.scrcpy.downloadAdb()));
+
+document.getElementById('scrcpyAutoInstallBtn').addEventListener('click', () =>
+  runAutoInstall('scrcpy', () => window.scrcpy.downloadScrcpy()));
+
+document.getElementById('adbRepairBtn').addEventListener('click', () =>
+  runAutoInstall('adb', () => window.scrcpy.downloadAdb()));
+
+document.getElementById('scrcpyRepairBtn').addEventListener('click', () =>
+  runAutoInstall('scrcpy', () => window.scrcpy.downloadScrcpy()));
+
+// ── Remove buttons ────────────────────────────────────────────────────────────
+
+async function removeTool(name) {
+  const result = await window.scrcpy.removeTool(name);
+  if (!result.ok) { alert(`Remove failed: ${result.error}`); return; }
+  document.getElementById(`${name}DlProgress`).style.display = 'none';
+  await checkDeps();
+  if (name === 'adb') await refreshDevices();
+}
+
+document.getElementById('adbRemoveBtn').addEventListener('click',    () => removeTool('adb'));
+document.getElementById('scrcpyRemoveBtn').addEventListener('click', () => removeTool('scrcpy'));
+
+async function handleLocate(name) {
+  const result = await window.scrcpy.pickBinary(name);
+  if (!result) return;
+  if (result.error) { alert(result.error); return; }
+  await window.scrcpy.saveBinaryPath(name, result);
+  document.getElementById(`${name}PathInput`).value = result;
+  await checkDeps();
+}
+
+document.getElementById('adbLocateBtn').addEventListener('click',    () => handleLocate('adb'));
+document.getElementById('scrcpyLocateBtn').addEventListener('click', () => handleLocate('scrcpy'));
+
+async function handleSavePath(name) {
+  const val = document.getElementById(`${name}PathInput`).value.trim();
+  if (!val) return;
+  await window.scrcpy.saveBinaryPath(name, val);
+  await checkDeps();
+}
+
+document.getElementById('adbSavePathBtn').addEventListener('click',    () => handleSavePath('adb'));
+document.getElementById('scrcpySavePathBtn').addEventListener('click', () => handleSavePath('scrcpy'));
+document.getElementById('recheckDepsBtn').addEventListener('click',    () => checkDeps());
+
+// ── Device refresh (dep-aware) ────────────────────────────────────────────────
+
+async function refreshDevices() {
+  stopAuthPoll();
+  document.querySelector('#deviceTrigger .c-select-value-text').textContent = 'Scanning…';
+  const result = await window.scrcpy.listDevices();
+
+  if (result.error === 'adb_not_found') {
+    buildDeviceDropdown([]);
+    document.querySelector('#deviceTrigger .c-select-value-text').textContent = 'adb not found — see Setup';
+    return;
+  }
+  if (result.error) {
+    buildDeviceDropdown([]);
+    document.querySelector('#deviceTrigger .c-select-value-text').textContent = 'Error scanning devices';
+    return;
+  }
+
+  buildDeviceDropdown(result.devices || []);
+}
+
+document.getElementById('refreshBtn').addEventListener('click', refreshDevices);
+
+// ── Logcat level select ───────────────────────────────────────────────────────
+
+makeSelect('logLevelWrap', [
+  { value: 'V', label: 'Verbose' },
+  { value: 'D', label: 'Debug' },
+  { value: 'I', label: 'Info' },
+  { value: 'W', label: 'Warn' },
+  { value: 'E', label: 'Error' },
+], 'logLevel');
+
+// ── Device info ───────────────────────────────────────────────────────────────
+
+let deviceInfoTimer = null;
+
+async function loadDeviceInfo(serial) {
+  if (!serial) return;
+  const info = await window.scrcpy.getDeviceInfo(serial);
+  if (!info.ok) return;
+
+  document.getElementById('deviceInfoWidget').style.display = 'flex';
+
+  const bat = document.getElementById('diBattery');
+  if (info.battery !== null) {
+    const icon = info.charging ? '⚡' : '🔋';
+    bat.innerHTML = `<svg width="14" height="14"><use href="#ic-battery"/></svg> ${info.battery}%${info.charging ? ' ⚡' : ''}`;
+  }
+
+  const modelEl = document.getElementById('diModel');
+  modelEl.innerHTML = `<svg width="14" height="14"><use href="#ic-smartphone"/></svg> ${info.manufacturer} ${info.model}`.trim();
+
+  const androidEl = document.getElementById('diAndroid');
+  androidEl.innerHTML = `<svg width="14" height="14"><use href="#ic-cpu"/></svg> Android ${info.androidVer}`;
+
+  if (info.resolution) {
+    const resEl = document.getElementById('diRes');
+    resEl.innerHTML = `<svg width="14" height="14"><use href="#ic-monitor"/></svg> ${info.resolution}`;
+  }
+
+  const wifiCell = document.getElementById('diWifi');
+  if (info.wifiIp) {
+    wifiCell.style.display = 'flex';
+    document.getElementById('diWifiIp').textContent = info.wifiIp;
+  } else {
+    wifiCell.style.display = 'none';
+  }
+}
+
+function startDeviceInfoPoll(serial) {
+  loadDeviceInfo(serial);
+  deviceInfoTimer = setInterval(() => loadDeviceInfo(serial), 30000);
+}
+
+function stopDeviceInfoPoll() {
+  if (deviceInfoTimer) { clearInterval(deviceInfoTimer); deviceInfoTimer = null; }
+  document.getElementById('deviceInfoWidget').style.display = 'none';
+}
+
+document.getElementById('deviceSelectWrap').addEventListener('click', () => {
+  if (deviceValue) {
+    stopDeviceInfoPoll();
+    startDeviceInfoPoll(deviceValue);
+  }
+});
+
+// ── WiFi switch ────────────────────────────────────────────────────────────────
+
+document.getElementById('wifiSwitchBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('wifiSwitchBtn');
+  btn.disabled = true;
+  btn.textContent = 'Switching…';
+  const result = await window.scrcpy.wifiSwitch(deviceValue);
+  btn.disabled = false;
+  if (result.ok) {
+    btn.textContent = `Connected: ${result.ip}`;
+    setTimeout(() => refreshDevices(), 1500);
+  } else {
+    btn.textContent = 'Failed — retry';
+    appendLog(`[wifi-switch error] ${result.error}\n`, 'log-err');
+  }
+});
+
+// ── Presets ────────────────────────────────────────────────────────────────────
+
+const PRESET_DESCS = {
+  'low-latency':  '720p · 60fps · 4Mbps',
+  'high-quality': '1080p · 60fps · 20Mbps',
+  'screencast':   '1080p · 30fps · view-only',
+  'gaming':       'Max res · 60fps · awake',
+};
+
+async function loadPresets() {
+  const presets = await window.scrcpy.getPresets();
+  const grid = document.getElementById('presetsGrid');
+  grid.innerHTML = '';
+  presets.forEach(p => {
+    const chip = document.createElement('div');
+    chip.className = 'preset-chip';
+    chip.dataset.id = p.id;
+    chip.innerHTML = `
+      <span class="preset-name">${p.name}</span>
+      <span class="preset-desc">${PRESET_DESCS[p.id] || 'Custom'}</span>
+      ${!p.builtIn ? `<button class="preset-delete" title="Delete"><svg><use href="#ic-trash"/></svg></button>` : ''}
+    `;
+    chip.addEventListener('click', (e) => {
+      if (e.target.closest('.preset-delete')) return;
+      applyPreset(p.opts);
+      document.querySelectorAll('.preset-chip').forEach(c => c.classList.remove('active'));
+      chip.classList.add('active');
+    });
+    const del = chip.querySelector('.preset-delete');
+    if (del) {
+      del.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        await window.scrcpy.deletePreset(p.id);
+        loadPresets();
+      });
+    }
+    grid.appendChild(chip);
+  });
+}
+
+function applyPreset(opts) {
+  const setRange = (id, v) => { if (v !== undefined) { const el = document.getElementById(id); if (el) { el.value = v; el.dispatchEvent(new Event('input')); } } };
+  const setChk   = (id, v) => { if (v !== undefined) { const el = document.getElementById(id); if (el) { el.checked = v; el.dispatchEvent(new Event('change')); } } };
+  setRange('maxSizeRange',     opts.maxSize);
+  setRange('maxFpsRange',      opts.maxFps);
+  setRange('videoBitrateRange',opts.videoBitrate);
+  if (opts.videoCodec)  selects.videoCodec.setValue(opts.videoCodec);
+  setChk('noAudio',     opts.noAudio);
+  setChk('noControl',   opts.noControl);
+  setChk('stayAwake',   opts.stayAwake);
+  setChk('showTouches', opts.showTouches);
+  setChk('fullscreen',  opts.fullscreen);
+  updatePreview();
+}
+
+document.getElementById('savePresetBtn').addEventListener('click', async () => {
+  const name = prompt('Preset name:');
+  if (!name) return;
+  await window.scrcpy.savePreset(name, collectOpts());
+  loadPresets();
+});
+
+// ── Quick actions ─────────────────────────────────────────────────────────────
+
+document.querySelectorAll('.qa-btn').forEach(btn => {
+  btn.addEventListener('click', async () => {
+    const action = btn.dataset.action;
+    const fb = document.getElementById('qaFeedback');
+
+    if (action === 'screenshot') {
+      fb.textContent = 'Capturing…';
+      const res = await window.scrcpy.screenshot(deviceValue || undefined);
+      fb.textContent = res.ok ? `Saved: ${res.path}` : `Error: ${res.error}`;
+    } else {
+      const res = await window.scrcpy.keyevent(action, deviceValue || undefined);
+      fb.textContent = res.ok ? action : `Error: ${res.error}`;
+    }
+    setTimeout(() => { fb.textContent = ''; }, 3000);
+  });
+});
+
+// Show quick actions card when running
+window.scrcpy.onStatus(status => {
+  document.getElementById('quickActionsCard').style.display =
+    status === 'running' ? 'block' : 'none';
+});
+
+// ── Auto-reconnect ─────────────────────────────────────────────────────────────
+
+document.getElementById('autoReconnect').addEventListener('change', async (e) => {
+  if (!e.target.checked) {
+    await window.scrcpy.stopReconnectWatch();
+  }
+});
+
+window.scrcpy.onStatus(async status => {
+  if (status === 'stopped' && document.getElementById('autoReconnect').checked && deviceValue) {
+    await window.scrcpy.startReconnectWatch(deviceValue, collectOpts());
+    appendLog('[auto-reconnect] Watching for device…\n');
+  }
+});
+
+window.scrcpy.onDeviceReconnected(serial => {
+  appendLog(`[auto-reconnect] Device ${serial} back online — relaunching\n`);
+});
+
+// ── Multi-device ───────────────────────────────────────────────────────────────
+
+const extraSessionSerials = new Set();
+
+function renderExtraSessions() {
+  const card = document.getElementById('extraSessionsCard');
+  const list = document.getElementById('extraSessionsList');
+  if (!extraSessionSerials.size) { card.style.display = 'none'; return; }
+  card.style.display = 'block';
+  list.innerHTML = '';
+  extraSessionSerials.forEach(serial => {
+    const el = document.createElement('div');
+    el.className = 'extra-session-card';
+    el.innerHTML = `
+      <div class="extra-session-info">
+        <span>Device session</span>
+        <span class="extra-session-serial">${serial}</span>
+      </div>
+      <button class="c-btn" data-serial="${serial}" style="color:var(--red);border-color:rgba(240,71,106,0.3);">
+        <svg><use href="#ic-stop"/></svg> Stop
+      </button>
+    `;
+    el.querySelector('button').addEventListener('click', async () => {
+      await window.scrcpy.stopExtra(serial);
+      extraSessionSerials.delete(serial);
+      renderExtraSessions();
+    });
+    list.appendChild(el);
+  });
+}
+
+document.getElementById('launchExtraBtn').addEventListener('click', async () => {
+  const result = await window.scrcpy.listDevices();
+  const available = (result.devices || []).filter(d =>
+    d.status === 'ready' && d.serial !== deviceValue
+  );
+  if (!available.length) { alert('No other ready devices connected.'); return; }
+  const serial = available[0].serial;
+  const res = await window.scrcpy.launchExtra(serial, collectOpts());
+  if (res.ok) {
+    extraSessionSerials.add(serial);
+    renderExtraSessions();
+  } else {
+    alert(res.error);
+  }
+});
+
+window.scrcpy.onExtraSessionStop(serial => {
+  extraSessionSerials.delete(serial);
+  renderExtraSessions();
+});
+
+// ── APK sideloader ─────────────────────────────────────────────────────────────
+
+let pendingApkPath = null;
+
+function setApkFile(filePath) {
+  pendingApkPath = filePath;
+  document.getElementById('apkDropzone').style.display  = 'none';
+  document.getElementById('apkSelected').style.display  = 'flex';
+  document.getElementById('apkFilename').textContent    = filePath.split('/').pop();
+}
+
+document.getElementById('pickApkBtn').addEventListener('click', async () => {
+  const p = await window.scrcpy.pickApk();
+  if (p) setApkFile(p);
+});
+
+document.getElementById('clearApkBtn').addEventListener('click', () => {
+  pendingApkPath = null;
+  document.getElementById('apkDropzone').style.display  = 'flex';
+  document.getElementById('apkSelected').style.display  = 'none';
+  document.getElementById('apkOutput').style.display    = 'none';
+  document.getElementById('apkOutput').innerHTML        = '';
+});
+
+document.getElementById('installApkBtn').addEventListener('click', async () => {
+  if (!pendingApkPath) return;
+  const out = document.getElementById('apkOutput');
+  out.innerHTML = '';
+  out.style.display = 'block';
+  await window.scrcpy.installApk(pendingApkPath, deviceValue || undefined);
+});
+
+window.scrcpy.onApkProgress(({ phase, detail }) => {
+  const out = document.getElementById('apkOutput');
+  if (phase === 'installing') { out.innerHTML = `Installing ${detail}…\n`; return; }
+  if (phase === 'output')     { out.textContent += detail; out.scrollTop = out.scrollHeight; return; }
+  if (phase === 'done')       { const s = document.createElement('span'); s.className='ok'; s.textContent='\n✓ Installed successfully'; out.appendChild(s); }
+  if (phase === 'error')      { const s = document.createElement('span'); s.className='err'; s.textContent=`\n✗ ${detail}`; out.appendChild(s); }
+});
+
+// Drag & drop anywhere on the app
+document.addEventListener('dragover', e => {
+  e.preventDefault();
+  if ([...e.dataTransfer.items].some(i => i.kind === 'file'))
+    document.getElementById('apkDropzone').classList.add('drag-over');
+});
+document.addEventListener('dragleave', () =>
+  document.getElementById('apkDropzone').classList.remove('drag-over'));
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  document.getElementById('apkDropzone').classList.remove('drag-over');
+  const file = [...e.dataTransfer.files].find(f => f.name.endsWith('.apk'));
+  if (file) {
+    // Switch to Tools panel
+    document.querySelector('[data-panel="tools"]').click();
+    setApkFile(file.path);
+  }
+});
+
+// ── App launcher ───────────────────────────────────────────────────────────────
+
+let allPackages = [];
+
+document.getElementById('loadAppsBtn').addEventListener('click', async () => {
+  const list = document.getElementById('appList');
+  list.innerHTML = '<div class="app-empty">Loading…</div>';
+  const res = await window.scrcpy.listApps(deviceValue || undefined);
+  if (!res.ok) { list.innerHTML = `<div class="app-empty">${res.error}</div>`; return; }
+  allPackages = res.packages;
+  renderAppList(allPackages);
+});
+
+document.getElementById('appSearch').addEventListener('input', e => {
+  const q = e.target.value.toLowerCase();
+  renderAppList(allPackages.filter(p => p.toLowerCase().includes(q)));
+});
+
+function renderAppList(packages) {
+  const list = document.getElementById('appList');
+  if (!packages.length) { list.innerHTML = '<div class="app-empty">No apps found</div>'; return; }
+  list.innerHTML = '';
+  packages.slice(0, 200).forEach(pkg => {
+    const el = document.createElement('div');
+    el.className = 'app-item';
+    const shortName = pkg.split('.').pop();
+    el.innerHTML = `
+      <span class="app-item-pkg" title="${pkg}">${shortName} <span style="font-size:10px;color:var(--muted);">${pkg}</span></span>
+      <div class="app-item-actions">
+        <button class="c-btn" data-pkg="${pkg}" data-action="launch" style="padding:3px 8px;font-size:11px;">Launch</button>
+        <button class="c-btn" data-pkg="${pkg}" data-action="stop"   style="padding:3px 8px;font-size:11px;color:var(--red);">Stop</button>
+      </div>
+    `;
+    el.querySelectorAll('[data-action]').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const p = btn.dataset.pkg;
+        if (btn.dataset.action === 'launch') await window.scrcpy.launchApp(p, deviceValue || undefined);
+        else await window.scrcpy.forceStopApp(p, deviceValue || undefined);
+      });
+    });
+    list.appendChild(el);
+  });
+}
+
+// ── ADB terminal ───────────────────────────────────────────────────────────────
+
+const termHistory = [];
+let termHistIdx = -1;
+
+function termAppend(text, cls) {
+  const out = document.getElementById('termOutput');
+  const span = document.createElement('span');
+  span.className = cls || '';
+  span.textContent = text;
+  out.appendChild(span);
+  out.scrollTop = out.scrollHeight;
+}
+
+async function runTermCommand(cmd) {
+  if (!cmd.trim()) return;
+  termHistory.unshift(cmd);
+  termHistIdx = -1;
+  termAppend(`$ ${cmd}\n`, 'term-cmd');
+  const res = await window.scrcpy.shellCommand(cmd, deviceValue || undefined);
+  if (res.output) termAppend(res.output + '\n', res.ok ? 'term-out' : 'term-err');
+}
+
+document.getElementById('termInput').addEventListener('keydown', async e => {
+  if (e.key === 'Enter') {
+    const input = e.target;
+    await runTermCommand(input.value);
+    input.value = '';
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault();
+    termHistIdx = Math.min(termHistIdx + 1, termHistory.length - 1);
+    e.target.value = termHistory[termHistIdx] || '';
+  } else if (e.key === 'ArrowDown') {
+    e.preventDefault();
+    termHistIdx = Math.max(termHistIdx - 1, -1);
+    e.target.value = termHistIdx === -1 ? '' : termHistory[termHistIdx];
+  }
+});
+
+document.getElementById('termSendBtn').addEventListener('click', async () => {
+  const input = document.getElementById('termInput');
+  await runTermCommand(input.value);
+  input.value = '';
+});
+
+document.getElementById('clearTermBtn').addEventListener('click', () => {
+  document.getElementById('termOutput').innerHTML = '';
+});
+
+// ── Logcat ─────────────────────────────────────────────────────────────────────
+
+const LC_COLORS = { V: 'lc-V', D: 'lc-D', I: 'lc-I', W: 'lc-W', E: 'lc-E', F: 'lc-F' };
+let logcatRunning = false;
+let logcatAutoScroll = true;
+
+document.getElementById('logcatStartBtn').addEventListener('click', async () => {
+  const tag   = document.getElementById('logcatTag').value.trim() || null;
+  const level = selects.logLevel?.getValue() || 'V';
+  await window.scrcpy.startLogcat(deviceValue || undefined, tag, level);
+  logcatRunning = true;
+  document.getElementById('logcatStartBtn').disabled = true;
+  document.getElementById('logcatStopBtn').disabled  = false;
+});
+
+document.getElementById('logcatStopBtn').addEventListener('click', async () => {
+  await window.scrcpy.stopLogcat();
+  logcatRunning = false;
+  document.getElementById('logcatStartBtn').disabled = false;
+  document.getElementById('logcatStopBtn').disabled  = true;
+});
+
+document.getElementById('logcatClearBtn').addEventListener('click', () => {
+  document.getElementById('logcatOutput').innerHTML = '';
+});
+
+window.scrcpy.onLogcatLine(line => {
+  const out = document.getElementById('logcatOutput');
+  // Parse brief format: tag/level(pid): message  or  D/tag(pid): message
+  const m = line.match(/^([VDIWEF])\//);
+  const lvl = m ? m[1] : 'V';
+  const span = document.createElement('span');
+  span.className = LC_COLORS[lvl] || '';
+  span.textContent = line;
+  out.appendChild(span);
+  if (logcatAutoScroll) out.scrollTop = out.scrollHeight;
+  // Cap DOM size
+  if (out.children.length > 3000) out.removeChild(out.firstChild);
+});
+
+window.scrcpy.onLogcatStopped(() => {
+  logcatRunning = false;
+  document.getElementById('logcatStartBtn').disabled = false;
+  document.getElementById('logcatStopBtn').disabled  = true;
+});
+
+// ── Session history ────────────────────────────────────────────────────────────
+
+async function loadHistory() {
+  const sessions = await window.scrcpy.getSessions();
+  const list = document.getElementById('historyList');
+  if (!sessions.length) {
+    list.innerHTML = '<div class="history-empty">No sessions recorded yet.</div>';
+    return;
+  }
+  list.innerHTML = '';
+  sessions.forEach(s => {
+    const date = new Date(s.startTime).toLocaleString();
+    const dur  = s.duration ? `${Math.floor(s.duration/60)}m ${s.duration%60}s` : '—';
+    const card = document.createElement('div');
+    card.className = 'history-card';
+    card.innerHTML = `
+      <div class="history-card-top">
+        <span class="history-device">${s.serial || 'Unknown device'}</span>
+        <span class="history-time">${date}</span>
+      </div>
+      <div class="history-meta">Duration: ${dur} · ${s.opts?.videoCodec || 'default'} · ${s.opts?.maxSize || 'max'}</div>
+    `;
+    list.appendChild(card);
+  });
+}
+
+document.getElementById('clearHistoryBtn').addEventListener('click', async () => {
+  await window.scrcpy.clearSessions();
+  loadHistory();
+});
+
+// Load history when panel is shown
+document.querySelector('[data-panel="history"]').addEventListener('click', loadHistory);
+
+// ── Update checker ─────────────────────────────────────────────────────────────
+
+async function checkForUpdate() {
+  const res = await window.scrcpy.checkUpdate();
+  if (!res.ok || !res.hasUpdate) return;
+  const banner = document.getElementById('updateBanner');
+  document.getElementById('updateBannerText').textContent =
+    `scrcpy ${res.latest} is available (you have ${res.current || 'unknown'}).`;
+  banner.style.display = 'flex';
+  document.getElementById('updateDownloadBtn').addEventListener('click', () =>
+    window.scrcpy.openUrl('https://github.com/Genymobile/scrcpy/releases/latest'));
+  document.getElementById('updateDismissBtn').addEventListener('click', () =>
+    banner.style.display = 'none');
+}
+
+// ── Tray quick launch ──────────────────────────────────────────────────────────
+
+window.scrcpy.onTrayQuickLaunch(async cfg => {
+  if (appState.running) return;
+  const result = await window.scrcpy.launch(cfg);
+  if (!result.ok) appendLog(`[tray] ${result.error}\n`, 'log-err');
+});
+
+// ── Broken screen / no display recovery ──────────────────────────────────────
+
+// Toggle the panel open/closed
+document.getElementById('brokenScreenToggle').addEventListener('click', async () => {
+  const btn   = document.getElementById('brokenScreenToggle');
+  const panel = document.getElementById('brokenScreenPanel');
+  const open  = panel.style.display !== 'none';
+
+  panel.style.display = open ? 'none' : 'block';
+  btn.classList.toggle('open', !open);
+
+  if (!open) {
+    // Load ADB public key when panel opens
+    const res = await window.scrcpy.getAdbPubkey();
+    document.getElementById('adbPublicKey').textContent =
+      res.ok ? res.key : res.error;
+  }
+});
+
+// OTG launch
+let otgRunning = false;
+
+document.getElementById('otgLaunchBtn').addEventListener('click', async () => {
+  const btn    = document.getElementById('otgLaunchBtn');
+  const status = document.getElementById('otgStatus');
+
+  if (otgRunning) {
+    await window.scrcpy.stopOtg();
+    return;
+  }
+
+  const serial = deviceValue || undefined;
+  const result = await window.scrcpy.launchOtg(serial);
+
+  if (!result.ok) {
+    status.style.display = 'block';
+    status.className = 'bsp-otg-status err';
+    status.textContent = result.error;
+    return;
+  }
+
+  otgRunning = true;
+  btn.innerHTML = `<svg><use href="#ic-stop"/></svg> Stop OTG Session`;
+  btn.style.borderColor = 'var(--red)';
+  btn.style.color = 'var(--red)';
+  status.style.display = 'block';
+  status.className = 'bsp-otg-status';
+  status.textContent = 'OTG active — keyboard and touch input are now forwarded to the device.';
+});
+
+window.scrcpy.onOtgLog(msg => {
+  const status = document.getElementById('otgStatus');
+  if (status.style.display !== 'none') status.textContent += msg;
+});
+
+window.scrcpy.onOtgStopped(() => {
+  otgRunning = false;
+  const btn = document.getElementById('otgLaunchBtn');
+  btn.innerHTML = `<svg><use href="#ic-zap"/></svg> Launch OTG Input Mode`;
+  btn.style.borderColor = '';
+  btn.style.color = '';
+  const status = document.getElementById('otgStatus');
+  status.className = 'bsp-otg-status';
+  status.textContent = 'OTG session ended.';
+});
+
+// Wireless pairing
+document.getElementById('wirelessPairBtn').addEventListener('click', async () => {
+  const ip     = document.getElementById('wirelessIp').value.trim();
+  const port   = document.getElementById('wirelessPort').value.trim();
+  const code   = document.getElementById('wirelessCode').value.trim();
+  const result = document.getElementById('wirelessResult');
+
+  if (!ip || !port || !code) {
+    result.style.display = 'block';
+    result.className = 'bsp-result err';
+    result.textContent = 'Fill in IP address, port, and pairing code.';
+    return;
+  }
+
+  result.style.display = 'block';
+  result.className = 'bsp-result';
+  result.textContent = 'Pairing…';
+
+  const pairRes = await window.scrcpy.wirelessPair(ip, port, code);
+
+  if (!pairRes.ok) {
+    result.className = 'bsp-result err';
+    result.textContent = pairRes.error;
+    return;
+  }
+
+  result.textContent = pairRes.message + '\nConnecting…';
+
+  // After pairing, connect on the standard ADB wireless port (5555) or the same port
+  const connectRes = await window.scrcpy.wirelessConnect(ip, port);
+  if (!connectRes.ok) {
+    result.className = 'bsp-result err';
+    result.textContent = connectRes.error;
+    return;
+  }
+
+  result.className = 'bsp-result';
+  result.textContent = connectRes.message;
+
+  // Refresh device list so the new wireless device appears
+  setTimeout(() => refreshDevices(), 1200);
+});
+
+// Copy ADB key
+document.getElementById('copyAdbKeyBtn').addEventListener('click', async () => {
+  const key = document.getElementById('adbPublicKey').textContent;
+  if (!key || key.startsWith('Key not found')) return;
+  await navigator.clipboard.writeText(key);
+  const btn = document.getElementById('copyAdbKeyBtn');
+  btn.innerHTML = `<svg><use href="#ic-check-circle"/></svg> Copied`;
+  setTimeout(() => { btn.innerHTML = `<svg><use href="#ic-check"/></svg> Copy key`; }, 2000);
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+(async () => {
+  await restoreConfig();
+  const deps = await checkDeps();
+  await refreshDevices();
+  updatePreview();
+  await loadPresets();
+
+  // Load device info for first ready device
+  if (deviceValue) startDeviceInfoPoll(deviceValue);
+
+  // Check for scrcpy update in background
+  checkForUpdate();
+
+  // Navigate to setup if deps missing
+  if (!deps.adb.found || !deps.scrcpy.found) {
+    document.querySelector('[data-panel="setup"]').click();
+  }
+})();
+
+// Reload device info + presets when device changes
+const origBuildDropdown = buildDeviceDropdown;
+// patch: after device selection changes, refresh info
+document.getElementById('deviceSelectWrap').addEventListener('change', () => {
+  stopDeviceInfoPoll();
+  if (deviceValue) startDeviceInfoPoll(deviceValue);
+});
+</script>
+</body>
+</html>

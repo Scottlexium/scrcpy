@@ -1,0 +1,126 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <!-- App background gradient -->
+    <linearGradient id="bg" x1="0" y1="0" x2="1024" y2="1024" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#181428"/>
+      <stop offset="100%" stop-color="#0b0a18"/>
+    </linearGradient>
+
+    <!-- Phone body -->
+    <linearGradient id="phoneBody" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#2a2545"/>
+      <stop offset="100%" stop-color="#1e1a35"/>
+    </linearGradient>
+
+    <!-- Screen fill -->
+    <linearGradient id="screenFill" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#312870"/>
+      <stop offset="100%" stop-color="#1f1850"/>
+    </linearGradient>
+
+    <!-- Purple glow behind phone -->
+    <radialGradient id="glow" cx="460" cy="520" r="280" gradientUnits="userSpaceOnUse">
+      <stop offset="0%"   stop-color="#7c6ff7" stop-opacity="0.22"/>
+      <stop offset="100%" stop-color="#6c5ce7" stop-opacity="0"/>
+    </radialGradient>
+
+    <!-- Cast arc gradient — fades to transparent at ends -->
+    <linearGradient id="arcFade" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%"   stop-color="#a598ff" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#6c5ce7" stop-opacity="0.6"/>
+    </linearGradient>
+
+    <!-- Play button gradient -->
+    <linearGradient id="playGrad" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%"   stop-color="#b8b0ff"/>
+      <stop offset="100%" stop-color="#7c6ff7"/>
+    </linearGradient>
+
+    <!-- Outer ring glow filter -->
+    <filter id="softGlow" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="8" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+
+    <filter id="arcGlow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- ── Background ── -->
+  <rect width="1024" height="1024" rx="224" fill="url(#bg)"/>
+
+  <!-- Subtle noise texture layer via rect pattern (faint) -->
+  <rect width="1024" height="1024" rx="224" fill="#7c6ff7" opacity="0.03"/>
+
+  <!-- ── Glow behind phone ── -->
+  <ellipse cx="460" cy="530" rx="290" ry="300" fill="url(#glow)"/>
+
+  <!-- ── Phone body ── -->
+  <rect x="292" y="196" width="336" height="606"
+        rx="52" ry="52"
+        fill="url(#phoneBody)"
+        stroke="#3d3660" stroke-width="2.5"/>
+
+  <!-- Phone screen bezel area -->
+  <rect x="316" y="256" width="288" height="486"
+        rx="18" ry="18"
+        fill="url(#screenFill)"/>
+
+  <!-- Notch / camera pill -->
+  <rect x="430" y="222" width="60" height="18" rx="9" fill="#141228"/>
+
+  <!-- Home indicator bar -->
+  <rect x="420" y="778" width="80" height="10" rx="5"
+        fill="#3d3660" opacity="0.8"/>
+
+  <!-- ── Screen content: play triangle ── -->
+  <!-- Outer soft circle -->
+  <circle cx="460" cy="500" r="82" fill="#6c5ce7" opacity="0.18"/>
+  <circle cx="460" cy="500" r="62" fill="#6c5ce7" opacity="0.22"/>
+
+  <!-- Play arrow -->
+  <path d="M430 465 L507 500 L430 535 Z"
+        fill="url(#playGrad)"
+        filter="url(#softGlow)"/>
+
+  <!-- ── Cast arcs (right side of phone) ── -->
+  <!-- These radiate from the phone's upper-right toward the right edge -->
+
+  <!-- Arc 1 — innermost / most opaque -->
+  <path d="M 640 390
+           Q 716 480
+             640 568"
+        fill="none"
+        stroke="#9d93ff"
+        stroke-width="18"
+        stroke-linecap="round"
+        opacity="0.90"
+        filter="url(#arcGlow)"/>
+
+  <!-- Arc 2 — middle -->
+  <path d="M 658 340
+           Q 776 482
+             658 622"
+        fill="none"
+        stroke="#8b7cf8"
+        stroke-width="15"
+        stroke-linecap="round"
+        opacity="0.60"
+        filter="url(#arcGlow)"/>
+
+  <!-- Arc 3 — outermost / most transparent -->
+  <path d="M 676 288
+           Q 838 482
+             676 678"
+        fill="none"
+        stroke="#7c6ff7"
+        stroke-width="12"
+        stroke-linecap="round"
+        opacity="0.32"
+        filter="url(#arcGlow)"/>
+
+  <!-- ── Bottom wordmark dot (subtle brand element) ── -->
+  <circle cx="460" cy="630" r="6" fill="#6c5ce7" opacity="0.5"/>
+</svg>

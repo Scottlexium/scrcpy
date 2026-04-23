@@ -1,0 +1,89 @@
+{
+  "name": "scrcpy-gui",
+  "version": "1.0.0",
+  "description": "GUI launcher for scrcpy — mirror and control Android devices",
+  "main": "main.js",
+  "scripts": {
+    "start":       "electron .",
+    "gen-icons":   "node scripts/gen-icons.js",
+    "build":       "npm run gen-icons && electron-builder",
+    "build:mac":   "npm run gen-icons && electron-builder --mac",
+    "build:win":   "npm run gen-icons && electron-builder --win",
+    "build:linux": "npm run gen-icons && electron-builder --linux"
+  },
+  "devDependencies": {
+    "electron":         "^36.0.0",
+    "electron-builder": "^25.0.0",
+    "png2icons":        "^2.0.1",
+    "sharp":            "^0.34.5"
+  },
+  "build": {
+    "appId":       "com.scrcpygui.app",
+    "productName": "scrcpy GUI",
+    "copyright":   "Copyright © 2025 Scottlexium",
+    "icon":        "assets/icons/icon.png",
+
+    "files": [
+      "main.js",
+      "preload.js",
+      "index.html",
+      "assets/icons/**",
+      "package.json"
+    ],
+
+    "mac": {
+      "icon":         "assets/icons/mac/icon.icns",
+      "category":     "public.app-category.utilities",
+      "target": [
+        { "target": "dmg", "arch": ["arm64", "x64"] },
+        { "target": "zip", "arch": ["arm64", "x64"] }
+      ],
+      "darkModeSupport": true,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements":        "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+
+    "dmg": {
+      "title":      "${productName} ${version}",
+      "background": "assets/dmg-background.png",
+      "window":     { "width": 540, "height": 380 },
+      "contents": [
+        { "x": 150, "y": 185, "type": "file" },
+        { "x": 390, "y": 185, "type": "link", "path": "/Applications" }
+      ]
+    },
+
+    "win": {
+      "icon":   "assets/icons/win/icon.ico",
+      "target": [
+        { "target": "nsis",     "arch": ["x64"] },
+        { "target": "portable", "arch": ["x64"] }
+      ],
+      "requestedExecutionLevel": "asInvoker"
+    },
+
+    "nsis": {
+      "oneClick":           false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true
+    },
+
+    "linux": {
+      "icon":     "assets/icons/png",
+      "category": "Utility",
+      "target": [
+        { "target": "AppImage", "arch": ["x64"] },
+        { "target": "deb",      "arch": ["x64"] }
+      ]
+    },
+
+    "publish": {
+      "provider": "github",
+      "owner":    "Scottlexium",
+      "repo":     "scrcpy"
+    }
+  }
+}
