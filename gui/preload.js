@@ -2,9 +2,11 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('scrcpy', {
   // Core
-  listDevices:    ()           => ipcRenderer.invoke('list-devices'),
-  launch:         (opts)       => ipcRenderer.invoke('launch-scrcpy', opts),
-  stop:           ()           => ipcRenderer.invoke('stop-scrcpy'),
+  listDevices:      ()         => ipcRenderer.invoke('list-devices'),
+  launch:           (opts)     => ipcRenderer.invoke('launch-scrcpy', opts),
+  stop:             ()         => ipcRenderer.invoke('stop-scrcpy'),
+  pauseRecording:   ()         => ipcRenderer.invoke('pause-recording'),
+  resumeRecording:  ()         => ipcRenderer.invoke('resume-recording'),
   pickFile:       ()           => ipcRenderer.invoke('pick-file'),
   loadConfig:     ()           => ipcRenderer.invoke('load-config'),
   saveConfig:     (cfg)        => ipcRenderer.invoke('save-config', cfg),

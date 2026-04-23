@@ -583,6 +583,55 @@ body {
 }
 .path-override .c-input { flex: 1; font-family: var(--mono); font-size: 12px; }
 
+/* ── Recording strip ──────────────────────────────────────────────────────── */
+.rec-strip {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 18px;
+  background: rgba(240, 71, 106, 0.07);
+  border-top: 1px solid rgba(240, 71, 106, 0.2);
+  flex-shrink: 0;
+}
+.rec-dot {
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  background: var(--red);
+  animation: recPulse 1.2s ease-in-out infinite;
+  flex-shrink: 0;
+}
+.rec-dot.paused {
+  background: var(--muted);
+  animation: none;
+}
+@keyframes recPulse {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.3; }
+}
+.rec-label {
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  color: var(--red);
+}
+.rec-label.paused { color: var(--muted); }
+.rec-timer {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+  min-width: 62px;
+}
+.rec-path {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--sub);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 260px;
+}
+
 /* ── Update banner ────────────────────────────────────────────────────────── */
 .update-banner {
   display: flex;
@@ -2015,6 +2064,24 @@ body {
   <button class="update-dismiss" id="updateDismissBtn">×</button>
 </div>
 
+<!-- Recording strip (shown only when recording is active) -->
+<div class="rec-strip" id="recStrip" style="display:none;">
+  <span class="rec-dot" id="recDot"></span>
+  <span class="rec-label" id="recLabel">REC</span>
+  <span class="rec-timer" id="recTimer">00:00:00</span>
+  <span class="rec-path" id="recPath"></span>
+  <div style="margin-left:auto;display:flex;gap:8px;">
+    <button class="c-btn" id="recPauseBtn" style="padding:5px 12px;font-size:12px;">
+      <svg width="13" height="13"><use href="#ic-stop"/></svg>
+      Pause
+    </button>
+    <button class="c-btn" id="recResumeBtn" style="display:none;padding:5px 12px;font-size:12px;color:var(--green);border-color:rgba(0,203,169,0.4);">
+      <svg width="13" height="13"><use href="#ic-play"/></svg>
+      Resume
+    </button>
+  </div>
+</div>
+
 <!-- Launch bar -->
 <div class="launch-bar">
   <button class="btn-launch" id="launchBtn">
@@ -2521,7 +2588,88 @@ function setRunning(running) {
     : `<svg><use href="#ic-play"/></svg> Launch scrcpy`;
 
   document.getElementById('stopBtn').classList.toggle('visible', running);
+
+  // Show / hide recording strip based on running state + record option
+  if (running && gc('record') && gv('recordPath').trim()) {
+    showRecordingStrip(gv('recordPath').trim());
+  } else {
+    hideRecordingStrip();
+  }
 }
+
+// ── Recording strip ───────────────────────────────────────────────────────────
+
+let recTimerInterval = null;
+let recStartTime     = null;
+let recIsPaused      = false;
+let recPausedAt      = null;
+let recPausedTotal   = 0;      // total ms spent paused
+
+function showRecordingStrip(filePath) {
+  recStartTime   = Date.now();
+  recPausedTotal = 0;
+  recIsPaused    = false;
+
+  document.getElementById('recStrip').style.display = 'flex';
+  document.getElementById('recPath').textContent    = filePath.split('/').pop();
+
+  clearInterval(recTimerInterval);
+  recTimerInterval = setInterval(updateRecTimer, 500);
+  updateRecTimer();
+}
+
+function hideRecordingStrip() {
+  clearInterval(recTimerInterval);
+  recTimerInterval = null;
+  recStartTime     = null;
+  recIsPaused      = false;
+  document.getElementById('recStrip').style.display = 'none';
+}
+
+function updateRecTimer() {
+  if (!recStartTime) return;
+  const elapsed = recIsPaused
+    ? recPausedAt - recStartTime - recPausedTotal
+    : Date.now()  - recStartTime - recPausedTotal;
+  const s = Math.floor(elapsed / 1000);
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = s % 60;
+  document.getElementById('recTimer').textContent =
+    `${String(h).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}`;
+}
+
+function setRecPaused(paused) {
+  recIsPaused = paused;
+  if (paused) {
+    recPausedAt = Date.now();
+  } else {
+    recPausedTotal += Date.now() - recPausedAt;
+  }
+
+  const dot       = document.getElementById('recDot');
+  const label     = document.getElementById('recLabel');
+  const pauseBtn  = document.getElementById('recPauseBtn');
+  const resumeBtn = document.getElementById('recResumeBtn');
+
+  dot.className       = 'rec-dot' + (paused ? ' paused' : '');
+  label.textContent   = paused ? 'PAUSED' : 'REC';
+  label.className     = 'rec-label' + (paused ? ' paused' : '');
+  pauseBtn.style.display  = paused ? 'none'  : 'flex';
+  resumeBtn.style.display = paused ? 'flex'  : 'none';
+}
+
+document.getElementById('recPauseBtn').addEventListener('click', async () => {
+  const res = await window.scrcpy.pauseRecording();
+  if (res.ok) setRecPaused(true);
+  else appendLog(`[pause] ${res.error}\n`, 'log-err');
+});
+
+document.getElementById('recResumeBtn').addEventListener('click', async () => {
+  const res = await window.scrcpy.resumeRecording();
+  if (res.ok) setRecPaused(false);
+  else appendLog(`[resume] ${res.error}\n`, 'log-err');
+});
 
 window.scrcpy.onStatus(s => setRunning(s === 'running'));
 

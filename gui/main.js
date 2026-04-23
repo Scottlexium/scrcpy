@@ -588,6 +588,37 @@ ipcMain.handle('stop-scrcpy', () => {
   return { ok: true };
 });
 
+// ── Recording pause / resume ─────────────────────────────────────────────────
+// Uses SIGSTOP / SIGCONT to suspend and resume the scrcpy process.
+// The recording file remains open and resumes writing on SIGCONT.
+// Not supported on Windows — falls back to a clear error.
+
+let recordingPaused = false;
+
+ipcMain.handle('pause-recording', () => {
+  if (!scrcpyProcess) return { ok: false, error: 'Not running' };
+  if (process.platform === 'win32') return { ok: false, error: 'Pause is not supported on Windows' };
+  try {
+    scrcpyProcess.kill('SIGSTOP');
+    recordingPaused = true;
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
+ipcMain.handle('resume-recording', () => {
+  if (!scrcpyProcess) return { ok: false, error: 'Not running' };
+  if (process.platform === 'win32') return { ok: false, error: 'Resume is not supported on Windows' };
+  try {
+    scrcpyProcess.kill('SIGCONT');
+    recordingPaused = false;
+    return { ok: true };
+  } catch (e) {
+    return { ok: false, error: e.message };
+  }
+});
+
 // ── OTG input mode ──────────────────────────────────────────────────────────
 // Uses Android Open Accessory (AOA) — no USB debugging auth required.
 
